@@ -5,7 +5,7 @@
 *.vcxproj
 *.vcxproj.filters
 *.vcxproj.user
-[Aa]ssets/
+[Aa]ssets/[Mm]odels
 *.exe
 [Bb]in/
 **/cmake/**
