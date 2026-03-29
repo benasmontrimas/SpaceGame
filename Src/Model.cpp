@@ -3,6 +3,13 @@
 #define TINYOBJLOADER_IMPLEMENTATION
 #include <tiny_obj_loader.h>
 
+#include <volk/volk.h>
+#include "vulkan/vulkan.h"
+#include <vma/vk_mem_alloc.h>
+
+#include <ktx.h>
+#include <ktxvulkan.h>
+
 void Model::LoadFromOBJ(const std::string& file_name, const VmaAllocator& allocator) {
         tinyobj::attrib_t                attrib;
         std::vector<tinyobj::shape_t>    shapes;
