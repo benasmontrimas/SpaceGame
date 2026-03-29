@@ -3,6 +3,7 @@
 
 #include "Base.h"
 #include "Game.h"
+#include "Resources.h"
 
 #define VOLK_IMPLEMENTATION
 #include <volk/volk.h>
@@ -15,6 +16,136 @@
 #include <array>
 #include <print>
 #include <vector>
+
+void Game::InitComputePipeline() {
+        VkResult res;
+
+        // ===== Compute Descriptor Set Layout ===== //
+
+        VkDescriptorSetLayoutBinding density_field_binding{
+                .binding         = 0,
+                .descriptorType  = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, // buffer we can write to.
+                .descriptorCount = 1,
+                .stageFlags      = VK_SHADER_STAGE_COMPUTE_BIT,
+        };
+
+        // ===== Compute Descriptor Layout ===== //
+
+        VkDescriptorSetLayoutCreateInfo compute_descriptor_layout_info{
+                .sType        = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+                .bindingCount = 1,
+                .pBindings    = &density_field_binding,
+        };
+
+        res = vkCreateDescriptorSetLayout(vulkan_device, &compute_descriptor_layout_info, nullptr, &compute_descriptor_set_layout);
+
+        if (res != VK_SUCCESS) {
+                std::println("Failed creating compute descriptor set layout");
+                exit(res);
+        }
+
+        // ===== Compute Descriptor Pool ===== //
+
+        // TODO: JUST USE ADDRESS POINTERS. means we dont need descriptor sets at all and can just push the pointers to output/input data.
+
+        // NOTE: How many do we want? one, and reuse, or many and allocate new descriptor set every time we want to run the shader?
+        // NOTE: Ideally want to be size of how many chunks we can load at a time.
+        // NOTE: But do we pre allocate them? why would we not?
+        VkDescriptorPoolSize pool_size{
+                .type            = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+                .descriptorCount = 1,
+        };
+
+        VkDescriptorPoolCreateInfo pool_info{
+                .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO, .maxSets = 1, .poolSizeCount = 1, .pPoolSizes = &pool_size
+        };
+
+        res = vkCreateDescriptorPool(vulkan_device, &pool_info, nullptr, &compute_descriptor_pool);
+
+        if (res != VK_SUCCESS) {
+                std::println("Failed creating compute descriptor pool");
+                exit(res);
+        }
+
+        // ===== Allocate the descriptor Sets ===== //
+
+        VkDescriptorSetAllocateInfo descriptor_set_allocation_info{
+                .sType              = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+                .descriptorPool     = compute_descriptor_pool,
+                .descriptorSetCount = 1,
+                .pSetLayouts        = &compute_descriptor_set_layout,
+        };
+
+        res = vkAllocateDescriptorSets(vulkan_device, &descriptor_set_allocation_info, &compute_descriptor_set);
+
+        if (res != VK_SUCCESS) {
+                std::println("Failed allocating compute descriptor sets");
+                exit(res);
+        }
+
+        // ===== Create Compute Pipeline Layout ===== //
+
+        VkPushConstantRange push_constant_range{
+                .stageFlags = VK_SHADER_STAGE_COMPUTE_BIT,
+                .size       = sizeof(PlanetCreationInfo),
+        };
+
+        VkPipelineLayoutCreateInfo pipeline_layout_info{
+                .sType                  = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+                .setLayoutCount         = 1,
+                .pSetLayouts            = &compute_descriptor_set_layout,
+                .pushConstantRangeCount = 1,
+                .pPushConstantRanges    = &push_constant_range,
+        };
+
+        res = vkCreatePipelineLayout(vulkan_device, &pipeline_layout_info, nullptr, &compute_pipeline_layout);
+
+        if (res != VK_SUCCESS) {
+                std::println("Failed creating compute pipeline layout");
+                exit(res);
+        }
+
+        // ===== Compute Shaders ===== //
+
+        Slang::ComPtr<slang::IModule> slang_module{ slang_session->loadModuleFromSource("compute", "Assets/Shaders/compute.slang", nullptr, nullptr) };
+        // or slang_session->loadModule("compute");
+
+        Slang::ComPtr<ISlangBlob> spirv;
+        slang_module->getTargetCode(0, spirv.writeRef());
+
+        VkShaderModuleCreateInfo shader_module_info{
+                .sType    = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
+                .codeSize = spirv->getBufferSize(),
+                .pCode    = (u32*)spirv->getBufferPointer(),
+        };
+
+        VkShaderModule shader_module{};
+        res = vkCreateShaderModule(vulkan_device, &shader_module_info, nullptr, &shader_module);
+
+        if (res != VK_SUCCESS) {
+                std::println("Failed creating compute shader module");
+                exit(res);
+        }
+
+        VkPipelineShaderStageCreateInfo shader_stage_info{
+                .sType  = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+                .stage  = VK_SHADER_STAGE_COMPUTE_BIT,
+                .module = shader_module,
+                .pName  = "main",
+        };
+
+        // ===== Create Compute Pipeline ===== //
+
+        VkComputePipelineCreateInfo pipeline_info{
+                .sType  = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO,
+                .stage  = shader_stage_info,
+                .layout = compute_pipeline_layout,
+        };
+
+        vkCreateComputePipelines(vulkan_device, VK_NULL_HANDLE, 1, &pipeline_info, nullptr, &compute_pipeline);
+
+        vkDestroyShaderModule(vulkan_device, shader_module, nullptr);
+}
 
 void Game::Init() {
         VkResult res;
@@ -82,6 +213,11 @@ void Game::Init() {
 
         std::println("Selected Physical Device: {}", physical_device_properties.properties.deviceName);
 
+        // NOTE: need to use this to check if we are within limits.
+        VkPhysicalDeviceLimits device_limits = physical_device_properties.properties.limits;
+
+        std::println("Limits push constant size: {}", device_limits.maxPushConstantsSize);
+
         // ===== Vulkan Queues =====
 
         u32 queue_family_count{ 0 };
@@ -89,7 +225,8 @@ void Game::Init() {
         std::vector<VkQueueFamilyProperties> queue_families(queue_family_count);
         vkGetPhysicalDeviceQueueFamilyProperties(physical_device, &queue_family_count, queue_families.data());
 
-        u32 graphics_queue_family{ ~0u };
+        u32 graphics_queue_family{ u32_max };
+        u32 compute_queue_family{ u32_max };
 
         for (size_t i = 0; i < queue_families.size(); i++) {
                 if (queue_families[i].queueFlags & VK_QUEUE_GRAPHICS_BIT) {
@@ -108,6 +245,20 @@ void Game::Init() {
                 exit(1);
         }
 
+        for (size_t i = 0; i < queue_families.size(); i++) {
+                if (queue_families[i].queueFlags & VK_QUEUE_COMPUTE_BIT) {
+                        compute_queue_family = (u32)i;
+
+                        // We prefer a seperate queue to the graphics.
+                        if (compute_queue_family != graphics_queue_family) break;
+                }
+        }
+
+        if (compute_queue_family == u32_max) {
+                std::println("Failed to find a compute queue.");
+                exit(1);
+        }
+
         // ===== Vulkan Logical Device =====
 
         const float queue_priorities{ 1.0f };
@@ -117,6 +268,18 @@ void Game::Init() {
                 .queueFamilyIndex = graphics_queue_family,
                 .queueCount       = 1,
                 .pQueuePriorities = &queue_priorities,
+        };
+
+        VkDeviceQueueCreateInfo compute_queue_info{
+                .sType            = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
+                .queueFamilyIndex = compute_queue_family,
+                .queueCount       = 1,
+                .pQueuePriorities = &queue_priorities,
+        };
+
+        VkDeviceQueueCreateInfo queue_infos[2] = {
+                graphics_queue_info,
+                compute_queue_info,
         };
 
         VkPhysicalDeviceVulkan12Features enabled_vk12_features{
@@ -141,8 +304,8 @@ void Game::Init() {
         VkDeviceCreateInfo logical_device_info{
                 .sType                   = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
                 .pNext                   = &enabled_vk13_features,
-                .queueCreateInfoCount    = 1,
-                .pQueueCreateInfos       = &graphics_queue_info,
+                .queueCreateInfoCount    = 2,
+                .pQueueCreateInfos       = queue_infos,
                 .enabledExtensionCount   = (u32)device_extensions.size(),
                 .ppEnabledExtensionNames = device_extensions.data(),
                 .pEnabledFeatures        = &enabled_vk10_features,
@@ -156,6 +319,7 @@ void Game::Init() {
         }
 
         vkGetDeviceQueue(vulkan_device, graphics_queue_family, 0, &graphics_queue);
+        vkGetDeviceQueue(vulkan_device, compute_queue_family, 0, &compute_queue);
 
         // ===== VMA Allocator =====
 
@@ -336,30 +500,37 @@ void Game::Init() {
 
         // ===== Shader Data Buffers =====
 
+        // NOTE: Why are these not just in 1 buffer? this way is easier, but also means were doing more allocations?
         for (u32 i = 0; i < max_frames_in_flight; i++) {
-                VkBufferCreateInfo uniform_buffer_info{
-                        .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
-                        .size  = sizeof(ShaderDrawData),
-                        .usage = VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
-                };
+                // VkBufferCreateInfo uniform_buffer_info{
+                //         .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+                //         .size  = sizeof(ShaderDrawData),
+                //         .usage = VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
+                // };
 
-                VmaAllocationCreateInfo uniform_buffer_allocation_info{
-                        .flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_HOST_ACCESS_ALLOW_TRANSFER_INSTEAD_BIT |
-                                 VMA_ALLOCATION_CREATE_MAPPED_BIT,
-                        .usage = VMA_MEMORY_USAGE_AUTO,
-                };
+                // VmaAllocationCreateInfo uniform_buffer_allocation_info{
+                //         .flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_HOST_ACCESS_ALLOW_TRANSFER_INSTEAD_BIT |
+                //                  VMA_ALLOCATION_CREATE_MAPPED_BIT,
+                //         .usage = VMA_MEMORY_USAGE_AUTO,
+                // };
 
-                res = vmaCreateBuffer(vulkan_allocator, &uniform_buffer_info, &uniform_buffer_allocation_info, &draw_data[i].buffer, &draw_data[i].allocation,
-                                      &draw_data[i].allocation_info);
+                // res = vmaCreateBuffer(vulkan_allocator, &uniform_buffer_info, &uniform_buffer_allocation_info, &draw_data[i].buffer,
+                // &draw_data[i].allocation,
+                //                       &draw_data[i].allocation_info);
 
-                if (res != VK_SUCCESS) {
-                        std::println("Failed creating uniform buffer");
-                        exit(res);
-                }
+                // if (res != VK_SUCCESS) {
+                //         std::println("Failed creating uniform buffer");
+                //         exit(res);
+                // }
+
+                VmaAllocationCreateFlags allocation_flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
+                                                            VMA_ALLOCATION_CREATE_HOST_ACCESS_ALLOW_TRANSFER_INSTEAD_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT;
+
+                draw_data[i].buffer = CreateGPUBuffer(vulkan_allocator, sizeof(ShaderDrawData), VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT, allocation_flags);
 
                 VkBufferDeviceAddressInfo uniform_buffer_address_info{
                         .sType  = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO,
-                        .buffer = draw_data[i].buffer,
+                        .buffer = draw_data[i].buffer.buffer,
                 };
 
                 draw_data[i].device_address = vkGetBufferDeviceAddress(vulkan_device, &uniform_buffer_address_info);
@@ -509,43 +680,7 @@ void Game::Init() {
         // This actually updates, how expensive is this? Can we do it every texture loaded, or better to queue?
         // vkUpdateDescriptorSets(vulkan_device, 1, &write_descriptor_set, 0, nullptr);
 
-        // ===== Initialize Slang =====
-        slang::createGlobalSession(slang_global_session.writeRef());
-        auto slang_targets{ std::to_array<slang::TargetDesc>({ { .format{ SLANG_SPIRV }, .profile{ slang_global_session->findProfile("spirv_1_4") } } }) };
-        auto slang_options{ std::to_array<slang::CompilerOptionEntry>(
-                { { slang::CompilerOptionName::EmitSpirvDirectly, { slang::CompilerOptionValueKind::Int, 1 } } }) };
-
-        slang::SessionDesc slang_session_desc{
-                .targets{ slang_targets.data() },
-                .targetCount{ SlangInt(slang_targets.size()) },
-                .defaultMatrixLayoutMode = SLANG_MATRIX_LAYOUT_COLUMN_MAJOR,
-                .compilerOptionEntries{ slang_options.data() },
-                .compilerOptionEntryCount{ u32(slang_options.size()) },
-        };
-
-        // ===== Load Shaders =====
-
-        Slang::ComPtr<slang::ISession> slang_session;
-        slang_global_session->createSession(slang_session_desc, slang_session.writeRef());
-        Slang::ComPtr<slang::IModule> slang_module{ slang_session->loadModuleFromSource("base", "Assets/Shaders/shader.slang", nullptr, nullptr) };
-        Slang::ComPtr<ISlangBlob>     spirv;
-        slang_module->getTargetCode(0, spirv.writeRef());
-
-        VkShaderModuleCreateInfo shader_module_info{
-                .sType    = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
-                .codeSize = spirv->getBufferSize(),
-                .pCode    = (u32*)spirv->getBufferPointer(),
-        };
-
-        VkShaderModule shader_module{};
-        res = vkCreateShaderModule(vulkan_device, &shader_module_info, nullptr, &shader_module);
-
-        if (res != VK_SUCCESS) {
-                std::println("Failed creating shader module");
-                exit(res);
-        }
-
-        // ===== Pipelines =====
+        // ===== Pipeline Layout ===== //
 
         VkPushConstantRange push_constant_range{
                 .stageFlags = VK_SHADER_STAGE_VERTEX_BIT,
@@ -566,6 +701,52 @@ void Game::Init() {
                 std::println("Failed creating pipeline layout");
                 exit(res);
         }
+
+        // ===== Initialize Slang ===== //
+        slang::createGlobalSession(slang_global_session.writeRef());
+
+        // ===== Create Slang Session ===== //
+
+        auto slang_targets{ std::to_array<slang::TargetDesc>({ { .format{ SLANG_SPIRV }, .profile{ slang_global_session->findProfile("spirv_1_4") } } }) };
+        auto slang_options{ std::to_array<slang::CompilerOptionEntry>(
+                { { slang::CompilerOptionName::EmitSpirvDirectly, { slang::CompilerOptionValueKind::Int, 1 } } }) };
+
+        const char* shader_search_paths[] = { "Assets/Shaders/" };
+
+        slang::SessionDesc slang_session_desc{
+                .targets{ slang_targets.data() },
+                .targetCount{ SlangInt(slang_targets.size()) },
+                .defaultMatrixLayoutMode = SLANG_MATRIX_LAYOUT_COLUMN_MAJOR,
+                .searchPaths             = shader_search_paths,
+                .searchPathCount         = 1,
+                .compilerOptionEntries{ slang_options.data() },
+                .compilerOptionEntryCount{ u32(slang_options.size()) },
+        };
+
+        // Slang::ComPtr<slang::ISession> slang_session; // Why would we want to create multiple sessions?
+        slang_global_session->createSession(slang_session_desc, slang_session.writeRef());
+
+        // ===== Load Shaders ===== //
+        Slang::ComPtr<slang::IModule> slang_module{ slang_session->loadModuleFromSource("base", "Assets/Shaders/shader.slang", nullptr, nullptr) };
+
+        Slang::ComPtr<ISlangBlob> spirv;
+        slang_module->getTargetCode(0, spirv.writeRef());
+
+        VkShaderModuleCreateInfo shader_module_info{
+                .sType    = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
+                .codeSize = spirv->getBufferSize(),
+                .pCode    = (u32*)spirv->getBufferPointer(),
+        };
+
+        VkShaderModule shader_module{};
+        res = vkCreateShaderModule(vulkan_device, &shader_module_info, nullptr, &shader_module);
+
+        if (res != VK_SUCCESS) {
+                std::println("Failed creating shader module");
+                exit(res);
+        }
+
+        // ===== Pipeline ===== //
 
         std::vector<VkPipelineShaderStageCreateInfo> shader_stages{
                 { .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, .stage = VK_SHADER_STAGE_VERTEX_BIT, .module = shader_module, .pName = "main" },
@@ -668,8 +849,9 @@ void Game::Init() {
                 exit(res);
         }
 
-
         vkDestroyShaderModule(vulkan_device, shader_module, nullptr);
+
+        InitComputePipeline();
 }
 
 void Game::Shutdown() {
@@ -681,7 +863,7 @@ void Game::Shutdown() {
         for (u32 i = 0; i < max_frames_in_flight; i++) {
                 vkDestroyFence(vulkan_device, fences[i], nullptr);
                 vkDestroySemaphore(vulkan_device, present_semaphores[i], nullptr);
-                vmaDestroyBuffer(vulkan_allocator, draw_data[i].buffer, draw_data[i].allocation);
+                vmaDestroyBuffer(vulkan_allocator, draw_data[i].buffer.buffer, draw_data[i].buffer.allocation);
         }
 
         for (size_t i = 0; i < render_semaphores.size(); i++) {
@@ -755,9 +937,9 @@ void Game::Run() {
                 shader_draw_data.view       = glm::translate(Mat4(1.0f), camera_position);
 
                 shader_draw_data.model = glm::translate(Mat4(1.0f), Vec3{ 0, 0, 0 });
-                shader_draw_data.model = glm::scale(shader_draw_data.model, {0.1f, 0.1f, 0.1f});
+                shader_draw_data.model = glm::scale(shader_draw_data.model, { 0.1f, 0.1f, 0.1f });
 
-                memcpy(draw_data[frame_index].allocation_info.pMappedData, &shader_draw_data, sizeof(ShaderDrawData));
+                memcpy(draw_data[frame_index].buffer.allocation_info.pMappedData, &shader_draw_data, sizeof(ShaderDrawData));
 
                 VkCommandBuffer command_buffer = graphics_command_buffers[frame_index];
 
