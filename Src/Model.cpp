@@ -4,11 +4,11 @@
 #include <tiny_obj_loader.h>
 
 #include <volk/volk.h>
-#include "vulkan/vulkan.h"
-#include <vma/vk_mem_alloc.h>
 
 #include <ktx.h>
 #include <ktxvulkan.h>
+
+#include <print>
 
 void Model::LoadFromOBJ(const std::string& file_name, const VmaAllocator& allocator) {
         tinyobj::attrib_t                attrib;
@@ -315,6 +315,11 @@ void Texture::Load(VkDevice device, VkCommandPool command_pool, VkQueue queue, c
         };
 
         res = vkCreateSampler(device, &sampler_info, nullptr, &sampler);
+
+        if (res != VK_SUCCESS) {
+                std::println("Failed creating sampler");
+                exit(res);
+        }
 
         ktxTexture_Destroy(ktx_texture);
 }

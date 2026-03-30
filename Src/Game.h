@@ -34,6 +34,9 @@ struct UniformBuffer {
 
 struct PlanetCreationInfo {
         u32 seed;
+
+        u32             offset;
+        VkDeviceAddress buffer_address;
 };
 
 struct Game {
@@ -43,6 +46,8 @@ struct Game {
         void Shutdown();
 
         void Run();
+
+        void DispatchPlanetGen();
 
         // ====== //
 
@@ -58,6 +63,9 @@ struct Game {
         VkDevice       vulkan_device;
         VkSurfaceKHR   vulkan_surface;
         VkSwapchainKHR vulkan_swapchain;
+
+        u32 graphics_queue_family;
+        u32 compute_queue_family;
 
         VkQueue graphics_queue;
         VkQueue compute_queue;
@@ -115,5 +123,6 @@ struct Game {
         bool swapchain_needs_resizing{ false };
 
 
-        Model model;
+        UniformBuffer planet_density_buffer;
+        Model         model;
 };

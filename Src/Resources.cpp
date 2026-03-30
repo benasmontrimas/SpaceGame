@@ -2,8 +2,7 @@
 
 #include <print>
 
-GPUBuffer CreateGPUBuffer(VmaAllocator allocator, u64 size, VkBufferUsageFlags usage, VmaAllocationCreateFlags allocation_flags,
-                          VmaMemoryUsage memory_usage) {
+GPUBuffer CreateGPUBuffer(VmaAllocator allocator, u64 size, VkBufferUsageFlags usage, VmaAllocationCreateFlags allocation_flags, VmaMemoryUsage memory_usage) {
         VkBufferCreateInfo buffer_info{
                 .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
                 .size  = size,

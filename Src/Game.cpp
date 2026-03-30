@@ -1,9 +1,9 @@
+#include "Game.h"
+#include "Base.h"
+#include "Resources.h"
+
 #define VMA_IMPLEMENTATION
 #include <vma/vk_mem_alloc.h>
-
-#include "Base.h"
-#include "Game.h"
-#include "Resources.h"
 
 #define VOLK_IMPLEMENTATION
 #include <volk/volk.h>
@@ -22,27 +22,27 @@ void Game::InitComputePipeline() {
 
         // ===== Compute Descriptor Set Layout ===== //
 
-        VkDescriptorSetLayoutBinding density_field_binding{
-                .binding         = 0,
-                .descriptorType  = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, // buffer we can write to.
-                .descriptorCount = 1,
-                .stageFlags      = VK_SHADER_STAGE_COMPUTE_BIT,
-        };
+        // VkDescriptorSetLayoutBinding density_field_binding{
+        //         .binding         = 0,
+        //         .descriptorType  = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, // buffer we can write to.
+        //         .descriptorCount = 1,
+        //         .stageFlags      = VK_SHADER_STAGE_COMPUTE_BIT,
+        // };
 
         // ===== Compute Descriptor Layout ===== //
 
-        VkDescriptorSetLayoutCreateInfo compute_descriptor_layout_info{
-                .sType        = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
-                .bindingCount = 1,
-                .pBindings    = &density_field_binding,
-        };
+        // VkDescriptorSetLayoutCreateInfo compute_descriptor_layout_info{
+        //         .sType        = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+        //         .bindingCount = 0,
+        //         .pBindings    = nullptr,
+        // };
 
-        res = vkCreateDescriptorSetLayout(vulkan_device, &compute_descriptor_layout_info, nullptr, &compute_descriptor_set_layout);
+        // res = vkCreateDescriptorSetLayout(vulkan_device, &compute_descriptor_layout_info, nullptr, &compute_descriptor_set_layout);
 
-        if (res != VK_SUCCESS) {
-                std::println("Failed creating compute descriptor set layout");
-                exit(res);
-        }
+        // if (res != VK_SUCCESS) {
+        //         std::println("Failed creating compute descriptor set layout");
+        //         exit(res);
+        // }
 
         // ===== Compute Descriptor Pool ===== //
 
@@ -51,37 +51,37 @@ void Game::InitComputePipeline() {
         // NOTE: How many do we want? one, and reuse, or many and allocate new descriptor set every time we want to run the shader?
         // NOTE: Ideally want to be size of how many chunks we can load at a time.
         // NOTE: But do we pre allocate them? why would we not?
-        VkDescriptorPoolSize pool_size{
-                .type            = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-                .descriptorCount = 1,
-        };
+        // VkDescriptorPoolSize pool_size{
+        //         .type            = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+        //         .descriptorCount = 1,
+        // };
 
-        VkDescriptorPoolCreateInfo pool_info{
-                .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO, .maxSets = 1, .poolSizeCount = 1, .pPoolSizes = &pool_size
-        };
+        // VkDescriptorPoolCreateInfo pool_info{
+        //         .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO, .maxSets = 1, .poolSizeCount = 1, .pPoolSizes = &pool_size
+        // };
 
-        res = vkCreateDescriptorPool(vulkan_device, &pool_info, nullptr, &compute_descriptor_pool);
+        // res = vkCreateDescriptorPool(vulkan_device, &pool_info, nullptr, &compute_descriptor_pool);
 
-        if (res != VK_SUCCESS) {
-                std::println("Failed creating compute descriptor pool");
-                exit(res);
-        }
+        // if (res != VK_SUCCESS) {
+        //         std::println("Failed creating compute descriptor pool");
+        //         exit(res);
+        // }
 
         // ===== Allocate the descriptor Sets ===== //
 
-        VkDescriptorSetAllocateInfo descriptor_set_allocation_info{
-                .sType              = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
-                .descriptorPool     = compute_descriptor_pool,
-                .descriptorSetCount = 1,
-                .pSetLayouts        = &compute_descriptor_set_layout,
-        };
+        // VkDescriptorSetAllocateInfo descriptor_set_allocation_info{
+        //         .sType              = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+        //         .descriptorPool     = compute_descriptor_pool,
+        //         .descriptorSetCount = 1,
+        //         .pSetLayouts        = &compute_descriptor_set_layout,
+        // };
 
-        res = vkAllocateDescriptorSets(vulkan_device, &descriptor_set_allocation_info, &compute_descriptor_set);
+        // res = vkAllocateDescriptorSets(vulkan_device, &descriptor_set_allocation_info, &compute_descriptor_set);
 
-        if (res != VK_SUCCESS) {
-                std::println("Failed allocating compute descriptor sets");
-                exit(res);
-        }
+        // if (res != VK_SUCCESS) {
+        //         std::println("Failed allocating compute descriptor sets");
+        //         exit(res);
+        // }
 
         // ===== Create Compute Pipeline Layout ===== //
 
@@ -92,8 +92,8 @@ void Game::InitComputePipeline() {
 
         VkPipelineLayoutCreateInfo pipeline_layout_info{
                 .sType                  = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
-                .setLayoutCount         = 1,
-                .pSetLayouts            = &compute_descriptor_set_layout,
+                .setLayoutCount         = 0,
+                .pSetLayouts            = nullptr,
                 .pushConstantRangeCount = 1,
                 .pPushConstantRanges    = &push_constant_range,
         };
@@ -106,9 +106,15 @@ void Game::InitComputePipeline() {
         }
 
         // ===== Compute Shaders ===== //
-
-        Slang::ComPtr<slang::IModule> slang_module{ slang_session->loadModuleFromSource("compute", "Assets/Shaders/compute.slang", nullptr, nullptr) };
+        Slang::ComPtr<slang::IBlob>   diagnostics;
+        Slang::ComPtr<slang::IModule> slang_module{ slang_session->loadModuleFromSource("compute", "Assets/Shaders/compute.slang", nullptr,
+                                                                                        diagnostics.writeRef()) };
         // or slang_session->loadModule("compute");
+
+        if (diagnostics) {
+                std::println("Slang Error: {}", (const char*)diagnostics->getBufferPointer());
+                exit(1);
+        }
 
         Slang::ComPtr<ISlangBlob> spirv;
         slang_module->getTargetCode(0, spirv.writeRef());
@@ -145,6 +151,62 @@ void Game::InitComputePipeline() {
         vkCreateComputePipelines(vulkan_device, VK_NULL_HANDLE, 1, &pipeline_info, nullptr, &compute_pipeline);
 
         vkDestroyShaderModule(vulkan_device, shader_module, nullptr);
+
+        // ===== Compute Command Pool ===== //
+
+        VkCommandPoolCreateInfo command_pool_info{
+                .sType            = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
+                .flags            = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,
+                .queueFamilyIndex = compute_queue_family,
+        };
+
+        res = vkCreateCommandPool(vulkan_device, &command_pool_info, nullptr, &compute_command_pool);
+
+        if (res != VK_SUCCESS) {
+                std::println("Failed to create compute command pool");
+                exit(res);
+        }
+
+        VkCommandBufferAllocateInfo compute_command_buffer_allocate_info{
+                .sType              = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+                .commandPool        = compute_command_pool,
+                .commandBufferCount = 1,
+        };
+
+        res = vkAllocateCommandBuffers(vulkan_device, &compute_command_buffer_allocate_info, &compute_command_buffer);
+
+        if (res != VK_SUCCESS) {
+                std::println("Failed to allocate compute command buffers");
+                exit(res);
+        }
+
+        // ===== Sync ===== //
+
+        compute_fences.resize(1);
+
+        VkFenceCreateInfo fence_info{ .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO, .flags = 0 };
+
+        res = vkCreateFence(vulkan_device, &fence_info, nullptr, &compute_fences[0]);
+
+        if (res != VK_SUCCESS) {
+                std::println("Failed creating fence");
+                exit(res);
+        }
+
+        // ===== TEMP ===== //
+
+        VmaAllocationCreateFlags allocation_flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
+                                                    VMA_ALLOCATION_CREATE_HOST_ACCESS_ALLOW_TRANSFER_INSTEAD_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT;
+
+        planet_density_buffer.buffer =
+                CreateGPUBuffer(vulkan_allocator, sizeof(float) * 32 * 32 * 32, VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT, allocation_flags);
+
+        VkBufferDeviceAddressInfo planet_buffer_address_info{
+                .sType  = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO,
+                .buffer = planet_density_buffer.buffer.buffer,
+        };
+
+        planet_density_buffer.device_address = vkGetBufferDeviceAddress(vulkan_device, &planet_buffer_address_info);
 }
 
 void Game::Init() {
@@ -162,9 +224,18 @@ void Game::Init() {
         u32                instance_extension_count{ 0 };
         char const* const* instance_extensions{ SDL_Vulkan_GetInstanceExtensions(&instance_extension_count) };
 
+        std::vector<const char*> instance_layers;
+
+#ifdef DEBUG
+        instance_layers.push_back("VK_LAYER_KHRONOS_validation");
+        instance_layers.push_back("VK_LAYER_LUNARG_monitor");
+#endif
+
         VkInstanceCreateInfo instance_info{
                 .sType                   = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
                 .pApplicationInfo        = &app_info,
+                .enabledLayerCount       = (u32)instance_layers.size(),
+                .ppEnabledLayerNames     = instance_layers.data(),
                 .enabledExtensionCount   = instance_extension_count,
                 .ppEnabledExtensionNames = instance_extensions,
         };
@@ -225,8 +296,7 @@ void Game::Init() {
         std::vector<VkQueueFamilyProperties> queue_families(queue_family_count);
         vkGetPhysicalDeviceQueueFamilyProperties(physical_device, &queue_family_count, queue_families.data());
 
-        u32 graphics_queue_family{ u32_max };
-        u32 compute_queue_family{ u32_max };
+        graphics_queue_family = u32_max;
 
         for (size_t i = 0; i < queue_families.size(); i++) {
                 if (queue_families[i].queueFlags & VK_QUEUE_GRAPHICS_BIT) {
@@ -244,6 +314,8 @@ void Game::Init() {
                 std::println("Graphics queue does not support presentation");
                 exit(1);
         }
+
+        compute_queue_family = u32_max;
 
         for (size_t i = 0; i < queue_families.size(); i++) {
                 if (queue_families[i].queueFlags & VK_QUEUE_COMPUTE_BIT) {
@@ -668,14 +740,15 @@ void Game::Init() {
         std::vector<VkDescriptorImageInfo> texture_descriptors{};
         // Store Sampler, ImageView, ImageLayout
         // We can do this as we load textures?
-        VkWriteDescriptorSet               write_descriptor_set{
-                              .sType           = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-                              .dstSet          = descriptor_set,
-                              .dstBinding      = 0,
-                              .descriptorCount = (u32)100,
-                              .descriptorType  = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-                              .pImageInfo      = texture_descriptors.data(),
-        };
+
+        // VkWriteDescriptorSet               write_descriptor_set{
+        //                       .sType           = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+        //                       .dstSet          = descriptor_set,
+        //                       .dstBinding      = 0,
+        //                       .descriptorCount = (u32)100,
+        //                       .descriptorType  = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+        //                       .pImageInfo      = texture_descriptors.data(),
+        // };
 
         // This actually updates, how expensive is this? Can we do it every texture loaded, or better to queue?
         // vkUpdateDescriptorSets(vulkan_device, 1, &write_descriptor_set, 0, nullptr);
@@ -707,27 +780,43 @@ void Game::Init() {
 
         // ===== Create Slang Session ===== //
 
-        auto slang_targets{ std::to_array<slang::TargetDesc>({ { .format{ SLANG_SPIRV }, .profile{ slang_global_session->findProfile("spirv_1_4") } } }) };
-        auto slang_options{ std::to_array<slang::CompilerOptionEntry>(
-                { { slang::CompilerOptionName::EmitSpirvDirectly, { slang::CompilerOptionValueKind::Int, 1 } } }) };
+        auto slang_targets{ std::to_array<slang::TargetDesc>({
+                {
+                        .format  = SLANG_SPIRV,
+                        .profile = slang_global_session->findProfile("spirv_1_4"),
+                },
+        }) };
+        auto slang_options{ std::to_array<slang::CompilerOptionEntry>({ {
+                slang::CompilerOptionName::EmitSpirvDirectly,
+                { slang::CompilerOptionValueKind::Int, 1 },
+        } }) };
 
         const char* shader_search_paths[] = { "Assets/Shaders/" };
 
         slang::SessionDesc slang_session_desc{
-                .targets{ slang_targets.data() },
-                .targetCount{ SlangInt(slang_targets.size()) },
-                .defaultMatrixLayoutMode = SLANG_MATRIX_LAYOUT_COLUMN_MAJOR,
-                .searchPaths             = shader_search_paths,
-                .searchPathCount         = 1,
-                .compilerOptionEntries{ slang_options.data() },
-                .compilerOptionEntryCount{ u32(slang_options.size()) },
+                .targets                  = slang_targets.data(),
+                .targetCount              = SlangInt(slang_targets.size()),
+                .defaultMatrixLayoutMode  = SLANG_MATRIX_LAYOUT_COLUMN_MAJOR,
+                .searchPaths              = shader_search_paths,
+                .searchPathCount          = 1,
+                .compilerOptionEntries    = slang_options.data(),
+                .compilerOptionEntryCount = u32(slang_options.size()),
         };
 
         // Slang::ComPtr<slang::ISession> slang_session; // Why would we want to create multiple sessions?
         slang_global_session->createSession(slang_session_desc, slang_session.writeRef());
 
         // ===== Load Shaders ===== //
-        Slang::ComPtr<slang::IModule> slang_module{ slang_session->loadModuleFromSource("base", "Assets/Shaders/shader.slang", nullptr, nullptr) };
+        Slang::ComPtr<slang::IBlob>   diagnostics;
+        Slang::ComPtr<slang::IModule> slang_module{ slang_session->loadModuleFromSource("base", "Assets/Shaders/shader.slang", nullptr,
+                                                                                        diagnostics.writeRef()) };
+        // or slang_session->loadModule("compute");
+
+        if (diagnostics) {
+                std::println("Slang Error: {}", (const char*)diagnostics->getBufferPointer());
+                exit(1);
+        }
+
 
         Slang::ComPtr<ISlangBlob> spirv;
         slang_module->getTargetCode(0, spirv.writeRef());
@@ -860,6 +949,18 @@ void Game::Shutdown() {
         // TODO: move this
         model.Destroy(vulkan_allocator);
 
+        // ===== Compute ===== //
+
+        vkDestroyCommandPool(vulkan_device, compute_command_pool, nullptr);
+        vkDestroyFence(vulkan_device, compute_fences[0], nullptr);
+
+        vkDestroyPipelineLayout(vulkan_device, compute_pipeline_layout, nullptr);
+        vkDestroyPipeline(vulkan_device, compute_pipeline, nullptr);
+        vkDestroyDescriptorSetLayout(vulkan_device, compute_descriptor_set_layout, nullptr);
+        vkDestroyDescriptorPool(vulkan_device, compute_descriptor_pool, nullptr);
+
+        // ===== Graphics + Vulkan ===== //
+
         for (u32 i = 0; i < max_frames_in_flight; i++) {
                 vkDestroyFence(vulkan_device, fences[i], nullptr);
                 vkDestroySemaphore(vulkan_device, present_semaphores[i], nullptr);
@@ -895,11 +996,100 @@ void Game::Shutdown() {
         SDL_Quit();
 }
 
+void Game::DispatchPlanetGen() {
+        VkResult res;
+
+        // ===== Record Commands ===== //
+
+        res = vkResetCommandBuffer(compute_command_buffer, 0);
+
+        if (res != VK_SUCCESS) {
+                std::println("Failed Reseting compute command buffer");
+                exit(res);
+        }
+
+        VkCommandBufferBeginInfo command_buffer_begin_info{
+                .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+                .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
+        };
+
+        res = vkBeginCommandBuffer(compute_command_buffer, &command_buffer_begin_info);
+
+        if (res != VK_SUCCESS) {
+                std::println("Failed begining compute command buffer for rendering");
+                exit(res);
+        }
+
+        vkCmdBindPipeline(compute_command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute_pipeline);
+
+        PlanetCreationInfo planet_info{
+                .seed = 102,
+
+                .offset         = 0,
+                .buffer_address = planet_density_buffer.device_address,
+        };
+
+        vkCmdPushConstants(compute_command_buffer, compute_pipeline_layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(PlanetCreationInfo), &planet_info);
+
+        vkCmdDispatch(compute_command_buffer, 1, 1, 1);
+
+        res = vkEndCommandBuffer(compute_command_buffer);
+
+        if (res != VK_SUCCESS) {
+                std::println("Failed to end compute command buffer");
+                exit(res);
+        }
+
+        // ===== Submit Commands ===== //
+
+        VkSubmitInfo submit_info{
+                .sType                = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+                .waitSemaphoreCount   = 0,
+                .pWaitSemaphores      = nullptr,
+                .pWaitDstStageMask    = nullptr,
+                .commandBufferCount   = 1,
+                .pCommandBuffers      = &compute_command_buffer,
+                .signalSemaphoreCount = 0,
+                .pSignalSemaphores    = nullptr,
+        };
+
+        res = vkQueueSubmit(compute_queue, 1, &submit_info, compute_fences[0]);
+
+        if (res != VK_SUCCESS) {
+                std::println("Failed to submit compute commands");
+                exit(res);
+        }
+
+        // ===== Wait to Finish ===== //
+
+        std::println("Waiting On Fence");
+        res = vkWaitForFences(vulkan_device, 1, &compute_fences[0], true, u64_max);
+
+        if (res != VK_SUCCESS) {
+                std::println("Failed waiting on fence for rendering");
+                exit(res);
+        }
+
+        res = vkResetFences(vulkan_device, 1, &compute_fences[0]);
+
+        if (res != VK_SUCCESS) {
+                std::println("Failed resetting fences");
+                exit(res);
+        }
+        std::println("Waiting on Fence Finished");
+
+        // ===== Free Resources ===== //
+
+        vmaDestroyBuffer(vulkan_allocator, planet_density_buffer.buffer.buffer, planet_density_buffer.buffer.allocation);
+}
+
 void Game::Run() {
         VkResult res;
 
         u64  last_time{ SDL_GetTicks() };
         bool running = true;
+
+        DispatchPlanetGen();
 
         while (running) {
                 // ===== Wait For GPU =====
@@ -1011,7 +1201,7 @@ void Game::Run() {
                         .loadOp      = VK_ATTACHMENT_LOAD_OP_CLEAR,
                         .storeOp     = VK_ATTACHMENT_STORE_OP_STORE,
                         .clearValue{
-                                .color{ 0.05f, 0.0f, 0.5f, 1.0f },
+                                .color = { .float32{ 0.7f, 0.1f, 0.9f, 1.0f } },
                         },
                 };
 
@@ -1022,7 +1212,10 @@ void Game::Run() {
                         .loadOp      = VK_ATTACHMENT_LOAD_OP_CLEAR,
                         .storeOp     = VK_ATTACHMENT_STORE_OP_DONT_CARE,
                         .clearValue{
-                                .depthStencil{ 1.0f, 0 },
+                                .depthStencil{
+                                        .depth   = 1.0f,
+                                        .stencil = 0,
+                                },
                         },
                 };
 
@@ -1143,13 +1336,17 @@ void Game::Run() {
                 res = vkQueuePresentKHR(graphics_queue, &present_info);
 
                 if (res != VK_SUCCESS) {
-                        std::println("Failed presenting");
-                        exit(res);
+                        if (res == VK_SUBOPTIMAL_KHR) {
+                                std::println("Warning: should resize");
+                        } else {
+                                std::println("Failed presenting: {}", (int)res);
+                                exit(res);
+                        }
                 }
 
                 // ===== SDL Polling =====
 
-                float elapsed_time = (SDL_GetTicks() - last_time) / 1000.0f;
+                float elapsed_time = float(SDL_GetTicks() - last_time) / 1000.0f;
                 last_time          = SDL_GetTicks();
 
                 for (SDL_Event event; SDL_PollEvent(&event);) {
@@ -1169,7 +1366,7 @@ void Game::Run() {
                         }
 
                         if (event.type == SDL_EVENT_KEY_DOWN) {
-                                // if (event.key.key == SDLK_
+                                if (event.key.key == SDLK_ESCAPE) running = false;
                         }
 
                         if (event.type == SDL_EVENT_WINDOW_RESIZED) {

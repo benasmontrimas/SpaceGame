@@ -32,7 +32,6 @@ project "SpaceGame"
         filter "platforms:Linux"
                 defines { "OS_LINUX" }
                 system ("linux")
-                -- On windows I install vulkan with SDL and GLM already.
                 disablewarnings { "missing-field-initializers" }
 
         filter "configurations:Debug"
