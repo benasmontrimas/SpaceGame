@@ -1025,7 +1025,6 @@ void Game::DispatchPlanetGen() {
         PlanetCreationInfo planet_info{
                 .seed = 102,
 
-                .offset         = 0,
                 .buffer_address = planet_density_buffer.device_address,
         };
 

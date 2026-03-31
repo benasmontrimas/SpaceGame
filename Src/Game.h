@@ -35,7 +35,6 @@ struct UniformBuffer {
 struct PlanetCreationInfo {
         u32 seed;
 
-        u32             offset;
         VkDeviceAddress buffer_address;
 };
 

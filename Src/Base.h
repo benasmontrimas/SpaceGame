@@ -32,3 +32,7 @@ using Vec3 = glm::vec3;
 using Vec4 = glm::vec4;
 
 using Mat4 = glm::mat4;
+
+constexpr u64 KiloByte = 1'024;
+constexpr u64 MegaByte = 1'024 * KiloByte;
+constexpr u64 GigaByte = 1'024 * MegaByte;
