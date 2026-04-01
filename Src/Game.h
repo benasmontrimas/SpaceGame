@@ -65,6 +65,7 @@ struct Game {
 
         u32 graphics_queue_family;
         u32 compute_queue_family;
+        u32 transfer_queue_family;
 
         VkQueue graphics_queue;
         VkQueue compute_queue;
@@ -110,6 +111,10 @@ struct Game {
         std::vector<VkFence>     compute_fences;
         VkCommandPool            compute_command_pool;
         VkCommandBuffer          compute_command_buffer;
+
+        // ===== Transfer Pipeline ===== //
+
+        TransferEngine transfer_engine;
 
         // ===== //
 

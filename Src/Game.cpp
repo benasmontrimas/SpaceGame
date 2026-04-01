@@ -212,7 +212,7 @@ void Game::InitComputePipeline() {
 void Game::Init() {
         VkResult res;
 
-        // ===== Initialize Libraries =====
+        // ===== Initialise Libraries =====
 
         SDL_Init(SDL_INIT_VIDEO);
         SDL_Vulkan_LoadLibrary(NULL);
@@ -331,6 +331,22 @@ void Game::Init() {
                 exit(1);
         }
 
+        transfer_queue_family = u32_max;
+
+        for (size_t i = 0; i < queue_families.size(); i++) {
+                if (queue_families[i].queueFlags & VK_QUEUE_TRANSFER_BIT) {
+                        transfer_queue_family = (u32)i;
+
+                        // We prefer a seperate queue to the graphics and compute.
+                        if (transfer_queue_family != graphics_queue_family and transfer_queue_family != compute_queue_family) break;
+                }
+        }
+
+        if (transfer_queue_family == u32_max) {
+                std::println("Failed to find a compute queue.");
+                exit(1);
+        }
+
         // ===== Vulkan Logical Device =====
 
         const float queue_priorities{ 1.0f };
@@ -346,6 +362,13 @@ void Game::Init() {
                 .sType            = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
                 .queueFamilyIndex = compute_queue_family,
                 .queueCount       = 1,
+                .pQueuePriorities = &queue_priorities,
+        };
+
+        VkDeviceQueueCreateInfo transfer_queue_info {
+                .sType =       VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
+                .queueFamilyIndex = transfer_queue_family,
+                .queueCount = 1,
                 .pQueuePriorities = &queue_priorities,
         };
 
@@ -775,7 +798,7 @@ void Game::Init() {
                 exit(res);
         }
 
-        // ===== Initialize Slang ===== //
+        // ===== Initialise Slang ===== //
         slang::createGlobalSession(slang_global_session.writeRef());
 
         // ===== Create Slang Session ===== //
@@ -941,6 +964,7 @@ void Game::Init() {
         vkDestroyShaderModule(vulkan_device, shader_module, nullptr);
 
         InitComputePipeline();
+        transfer_engine.Init(vulkan_device, transfer_queue_family, vulkan_allocator);
 }
 
 void Game::Shutdown() {

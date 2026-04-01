@@ -13,7 +13,6 @@ struct GPUBuffer {
 
         // ===== Synchronization ====== //
 
-        u32         owning_queue_index;
         VkSemaphore ownership_semaphore;
         // Used by the transfer engine as it never keeps ownership of the buffer, but reusing ownership_semaphore can result in
         // 2 queue families waiting on the same semaphore, and im not sure how ordering works, if owning queue recieves it first
@@ -21,17 +20,10 @@ struct GPUBuffer {
         VkSemaphore transfer_semaphore;
 };
 
-// NOTE: Not currently used, but incase we want to provide some sort of partial transfer functionality
-// we can use this.
-struct GPUBufferSlice {
-        GPUBuffer gpu_buffer;
-
-        u64 offset;
-        u64 size;
-};
-
 constexpr VmaAllocationCreateFlags GPUBuffer_GPU_ONLY = VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT;
-constexpr VmaAllocationCreateFlags GPUBuffer_STAGING  = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT;
+constexpr VmaAllocationCreateFlags GPUBuffer_STAGING  = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT;
+
+// What is this one used for? I just use the staging buffer.
 constexpr VmaAllocationCreateFlags GPUBuffer_READBACK = VMA_ALLOCATION_CREATE_HOST_ACCESS_RANDOM_BIT;
 
 
@@ -41,13 +33,6 @@ GPUBuffer CreateStagingBuffer(VmaAllocator allocator, u64 size);
 GPUBuffer CreateReadbackBuffer(VmaAllocator allocator, u64 size);
 
 // ===== Buffers2 Interface ===== //
-
-// NOTE: Do we want to pass staging buffers? Makes it easier to reuse.
-// Staging buffers are hard to size properly as we dont want to waste too much memory on just staging.
-// NOTE: If we want to allow max size texture of 4096x4096 for SDR images we need to allow atleast 68MB for texture staging buffers
-// NOTE: For Models, assuming 4 * Vec4 as vertex data, need about 28MB for model with 400,000 Verts and 150,000 Triangles
-// NOTE: Would probably want multiple copies in parallel, that said, most wont be the max size, so we can use offsets into the same
-// Staging Buffer
 
 // NOTE: VkDeviceAddress can be offset by a u64.
 
@@ -71,6 +56,8 @@ constexpr u64 staging_buffer_block_size       = 4 * KiloByte;
 constexpr u64 staging_buffer_block_count      = 65'536;
 constexpr u64 staging_buffer_total_size       = staging_buffer_block_size * staging_buffer_block_count;
 constexpr u32 staging_buffer_max_free_regions = max_transfers_in_flight + 1;
+constexpr u32 max_transfer_engine_jobs        = 1'000;
+constexpr u32 transfer_queue_end              = max_transfer_engine_jobs;
 
 /*
 TODO: For optimal staging buffer with use with images use VkPhysicalDeviceLimits:
@@ -88,13 +75,7 @@ struct BufferRegion {
         }
 };
 
-enum class TransferJobType : u32 {
-        Copy,
-        Read,
-        Write,
-};
-
-struct CopyTransferJob {
+struct GPUBufferCopyInfo {
         GPUBuffer src;
         GPUBuffer dst;
         u64       src_offset;
@@ -106,58 +87,77 @@ struct CopyTransferJob {
 };
 
 // NOTE: Copy from staging buffer to dst when user checks if job finished!
-struct ReadTransferJob {
+struct GPUBufferReadInfo {
         GPUBuffer src;
-        u64       src_offset;
+        u64       offset;
         u64       size;
         u8*       dst;
 
-        u32 src_queue_family;
+        u32          src_queue_family;
+        BufferRegion staging_buffer_region;
 };
 
-struct WriteTransferJob {
+struct GPUBufferWriteInfo {
         u8*       src;
-        u64       src_offset;
-        u64       src_size;
+        u64       offset;
+        u64       size;
         GPUBuffer dst;
 
-        u32 dst_queue_family;
-}
+        u32          dst_queue_family;
+        BufferRegion staging_buffer_region;
+};
+
+enum class TransferJobType : u32 {
+        Copy,
+        Read,
+        Write,
+};
+
+using TransferJobID = u32;
 
 struct TransferJob {
 
         TransferJobType type;
 
         union {
-                CopyTransferJob  copy_job;
-                ReadTransferJob  read_job;
-                WriteTransferJob write_job;
+                GPUBufferCopyInfo  copy_job;
+                GPUBufferReadInfo  read_job;
+                GPUBufferWriteInfo write_job;
         };
+
+        // ===== Next Link ===== //
+
+        TransferJobID next;
 
         // ===== Transfer Engine Variables ===== //
 
-        u32          id;
-        u32          transfer_index;
-        BufferRegion staging_buffer_region;
+        TransferJobID id;
+        u32           transfer_index;
+        BufferRegion  staging_buffer_region;
 };
 
-// NOTE: Stalls for now. TODO: Sumbit commands and return fence -> up to user to synchronize data deletion and usage correctly.
-// - Return a fence view and call release to return to pool for engine to reuse? that way we dont have to create and destory always.
-// User can do this, or automatically does this on return true from check?
-// - Can also just create and destroy fences allowing us to queue any number of transfer jobs in a vector and just return a unsignaled
-// fence view. This might be best option -> Can we still have some fence pool system, difficult to manage as would need to be dynamic.
-// and can result in frame drops if we need to resize vector and create new fences. Although realistically this can be set to a larger
-// number than ever needed with very little memory user.
 struct TransferEngine {
-        void Init(VkDevice device, u32 transfer_queue_family_index);
+        void Init(VkDevice device, u32 transfer_queue_family_index, VmaAllocator allocator);
         void Shutdown();
         void Update(); // If we want to queue things we will need an update function to call so that we can add more jobs to the queue.
 
-        void CopyFromGPUBuffer(GPUBuffer src, u32 offset, u32 size, u8* dst);
+        void GPUBufferRead(VkCommandBuffer command_buffer, const TransferJob& job);
+        void GPUBufferWrite(VkCommandBuffer command_buffer, const TransferJob& job);
 
         BufferRegion GetStagingBufferRegion(u64 size);
         void         ReleaseStagingBufferRegion(BufferRegion buffer_region);
-        void         Check(u32 index);
+
+        TransferJobID PopNextFreeTransferJob();
+        TransferJobID PopNextPendingTransferJob();
+
+        void AddPendingJob(TransferJobID id);
+        void FreeJob(TransferJobID id);
+
+        TransferJobID QueueGPUBufferRead(GPUBufferReadInfo read_job);
+        TransferJobID QueueGPUBufferWrite(GPUBufferWriteInfo write_job);
+
+        // NOTE: Once this returns true, you must not recheck. ID will be reused for other jobs.
+        bool Check(TransferJobID id);
 
         VmaAllocator vulkan_allocator;
 
@@ -168,7 +168,7 @@ struct TransferEngine {
 
         GPUBuffer    staging_buffer;
         // Could just make free regions a double linked list, makes it easier to add and remove... its never that big to really matter though.
-        u32 free_staging_buffer_region_count;
+        u32          free_staging_buffer_region_count;
         BufferRegion free_staging_buffer_regions[staging_buffer_max_free_regions];
 
         VkCommandPool   command_pool;
@@ -177,11 +177,14 @@ struct TransferEngine {
         bool            fence_in_use[max_transfers_in_flight];
 
         u32 transfer_index{}; // Used to mark index after the last used, as this is most likely to be ready.
-};
 
-// NOTE: This wont work... as fence cant point to a location which is guarateed to stay.
-// Need to just have some sort of ID which can be passed to TransferEngine to check on progress,
-// TransferEngine can then store map of ID to index.
-// NOTE: Unless we store it as a non contiguous array, and just keep track of free slots.
-// Yeah maybe do this method, and then return index instead of FenceView. means no pointers,
-// less space, and transfer does all lookups. Also dont need to create and destroy fences.
+        // ===== Transfer Jobs Queue ===== //
+
+        // NOTE: Staging buffer usage can be optimized by splitting jobs up. If a job doesnt fit, start a job that copies what fits
+        // and process the rest once space frees up. This means we can get 100% staging buffer use whilst we have atleast 100% the
+        // space queued. Issue is this would call lots of small copy commands, so would need to check if performance actually improves.
+        TransferJobID first_free;
+        TransferJobID first_pending;
+        TransferJobID last_pending;
+        TransferJob   transfer_jobs[max_transfer_engine_jobs];
+};
