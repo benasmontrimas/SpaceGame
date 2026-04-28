@@ -5,7 +5,8 @@
 #include <print>
 #include <string.h>
 
-GPUBuffer CreateGPUBuffer(VmaAllocator allocator, u64 size, VkBufferUsageFlags usage, VmaAllocationCreateFlags allocation_flags, VmaMemoryUsage memory_usage) {
+GPUBuffer CreateGPUBuffer(VkDevice vulkan_device, VmaAllocator allocator, u64 size, u32 owning_queue_family, VkBufferUsageFlags usage,
+                          VmaAllocationCreateFlags allocation_flags, VmaMemoryUsage memory_usage) {
         VkBufferCreateInfo buffer_info{
                 .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
                 .size  = size,
@@ -26,15 +27,31 @@ GPUBuffer CreateGPUBuffer(VmaAllocator allocator, u64 size, VkBufferUsageFlags u
                 exit(res);
         }
 
+        buffer.owning_queue_family = owning_queue_family;
+
+        VkSemaphoreCreateInfo semaphore_info{ .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO };
+        vkCreateSemaphore(vulkan_device, &semaphore_info, nullptr, &buffer.ownership_semaphore);
+        vkCreateSemaphore(vulkan_device, &semaphore_info, nullptr, &buffer.transfer_semaphore);
+
         return buffer;
 }
 
-GPUBuffer CreateStagingBuffer(VmaAllocator allocator, u64 size) {
-        return CreateGPUBuffer(allocator, size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, GPUBuffer_STAGING);
+void DestroyGPUBuffer(VkDevice vulkan_device, GPUBuffer& buffer, VmaAllocator vulkan_allocator) {
+        vmaDestroyBuffer(vulkan_allocator, buffer.buffer, buffer.allocation);
+        vkDestroySemaphore(vulkan_device, buffer.ownership_semaphore, nullptr);
+        vkDestroySemaphore(vulkan_device, buffer.transfer_semaphore, nullptr);
+
+        // Zero out memory so we dont store old refs.
+        memset(&buffer, 0, sizeof(GPUBuffer));
 }
 
-GPUBuffer CreateReadbackBuffer(VmaAllocator allocator, u64 size) {
-        return CreateGPUBuffer(allocator, size, VK_BUFFER_USAGE_TRANSFER_DST_BIT, GPUBuffer_READBACK);
+GPUBuffer CreateStagingBuffer(VkDevice vulkan_device, VmaAllocator allocator, u64 size, u32 owning_queue_family) {
+        return CreateGPUBuffer(vulkan_device, allocator, size, owning_queue_family, VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                               GPUBuffer_STAGING);
+}
+
+GPUBuffer CreateReadbackBuffer(VkDevice vulkan_device, VmaAllocator allocator, u64 size, u32 owning_queue_family) {
+        return CreateGPUBuffer(vulkan_device, allocator, size, owning_queue_family, VK_BUFFER_USAGE_TRANSFER_DST_BIT, GPUBuffer_READBACK);
 }
 
 // ===== Transfer Functions ===== //
@@ -44,18 +61,18 @@ void TransferEngine::Init(VkDevice device, u32 transfer_queue_family_index, VmaA
 
         // ===== Set Variables ===== //
 
-        vulkan_allocator   = allocator;
-        vulkan_device      = device;
-        queue_family_index = transfer_queue_family_index;
+        vulkan_allocator      = allocator;
+        vulkan_device         = device;
+        transfer_queue_family = transfer_queue_family_index;
 
-        vkGetDeviceQueue(vulkan_device, queue_family_index, 1, &queue);
+        vkGetDeviceQueue(vulkan_device, transfer_queue_family, 0, &queue);
 
         // ===== Create Command Pool ===== //
 
         VkCommandPoolCreateInfo command_pool_info{
                 .sType            = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
                 .flags            = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,
-                .queueFamilyIndex = queue_family_index,
+                .queueFamilyIndex = transfer_queue_family,
         };
 
         res = vkCreateCommandPool(vulkan_device, &command_pool_info, nullptr, &command_pool);
@@ -84,7 +101,7 @@ void TransferEngine::Init(VkDevice device, u32 transfer_queue_family_index, VmaA
 
         VkFenceCreateInfo fence_info{
                 .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
-                .flags = 0,
+                .flags = VK_FENCE_CREATE_SIGNALED_BIT,
         };
 
         for (u32 i = 0; i < max_transfers_in_flight; i++) {
@@ -101,7 +118,7 @@ void TransferEngine::Init(VkDevice device, u32 transfer_queue_family_index, VmaA
 
         // ===== Allocate Staging Buffer ===== //
 
-        staging_buffer = CreateStagingBuffer(vulkan_allocator, staging_buffer_total_size);
+        staging_buffer = CreateStagingBuffer(vulkan_device, vulkan_allocator, staging_buffer_total_size, transfer_queue_family);
 
         free_staging_buffer_region_count = 1;
         free_staging_buffer_regions[0]   = {
@@ -121,7 +138,22 @@ void TransferEngine::Init(VkDevice device, u32 transfer_queue_family_index, VmaA
         last_pending  = transfer_queue_end;
 }
 
+void TransferEngine::Shutdown() {
+        vkDeviceWaitIdle(vulkan_device);
+
+        vkDestroyCommandPool(vulkan_device, command_pool, nullptr);
+
+        for (u32 i = 0; i < max_transfers_in_flight; i++) {
+                vkDestroyFence(vulkan_device, fences[i], nullptr);
+        }
+
+        // vmaDestroyBuffer(vulkan_allocator, staging_buffer.buffer, staging_buffer.allocation);
+        DestroyGPUBuffer(vulkan_device, staging_buffer, vulkan_allocator);
+}
+
 void TransferEngine::Update() {
+        // std::println("Update");
+
         VkResult res;
 
         while (true) {
@@ -141,6 +173,7 @@ void TransferEngine::Update() {
 
                         if (res == VK_SUCCESS) {
                                 found = true;
+                                std::println("Fence Found");
                                 break;
                         } else if (res != VK_NOT_READY) {
                                 std::println("Failed checking transfer fence status");
@@ -159,12 +192,15 @@ void TransferEngine::Update() {
                         BufferRegion buffer_region = GetStagingBufferRegion(transfer_jobs[first_pending].read_job.size);
 
                         if (buffer_region.block_count == 0) break;
+                        std::println("Block Found");
 
                         transfer_jobs[first_pending].read_job.staging_buffer_region = buffer_region;
                 } else if (transfer_jobs[first_pending].type == TransferJobType::Write) {
                         BufferRegion buffer_region = GetStagingBufferRegion(transfer_jobs[first_pending].write_job.size);
 
                         if (buffer_region.block_count == 0) break;
+                        std::println("Block Found");
+
 
                         transfer_jobs[first_pending].write_job.staging_buffer_region = buffer_region;
                 }
@@ -177,7 +213,7 @@ void TransferEngine::Update() {
 
                 // ===== Reset fence ===== //
 
-                res = vkResetFences(vulkan_device, 1, &fences[transfer_index]);
+                res = vkResetFences(vulkan_device, 1, &fences[job.transfer_index]);
 
                 if (res != VK_SUCCESS) {
                         std::println("Failed resetting transfer fence");
@@ -186,9 +222,11 @@ void TransferEngine::Update() {
 
                 // ===== Get Command Buffer ===== //
 
-                VkCommandBuffer command_buffer = command_buffers[transfer_index];
+                VkCommandBuffer command_buffer = command_buffers[job.transfer_index];
 
                 // ===== Start Job ===== //
+
+                std::println("Job Type: {}", (u32)job.type);
 
                 switch (job.type) {
                 case TransferJobType::Copy: {
@@ -206,12 +244,13 @@ void TransferEngine::Update() {
                 // ===== Set Vars ===== //
 
                 fence_in_use[job.transfer_index] = true;
+                transfer_index                   = job.transfer_index;
         }
 }
 
 // Function to release ownership of a buffer from a queue. command buffer must have been started.
 // TODO: Pass access and stage in.
-void CmdReleaseBufferOwnership(const BufferOwnershipInfo& info) {
+void CmdReleaseBufferOwnership(BufferOwnershipInfo& info) {
         VkBufferMemoryBarrier2 release_barrier{
                 .sType               = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2,
                 .srcStageMask        = info.stage_mask,
@@ -232,9 +271,11 @@ void CmdReleaseBufferOwnership(const BufferOwnershipInfo& info) {
         };
 
         vkCmdPipelineBarrier2(info.command_buffer, &release_dependency_info);
+
+        info.buffer.owning_queue_family = u32_max; // Not owned by anyone right now
 }
 
-void CmdAcquireBufferOwnership(const BufferOwnershipInfo& info) {
+void CmdAcquireBufferOwnership(BufferOwnershipInfo& info) {
         VkBufferMemoryBarrier2 acquire_barrier{
                 .sType               = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2,
                 .srcStageMask        = VK_PIPELINE_STAGE_2_NONE, // Unused
@@ -255,6 +296,8 @@ void CmdAcquireBufferOwnership(const BufferOwnershipInfo& info) {
         };
 
         vkCmdPipelineBarrier2(info.command_buffer, &acquire_dependency_info);
+
+        info.buffer.owning_queue_family = info.new_queue_family;
 }
 
 BufferRegion TransferEngine::GetStagingBufferRegion(u64 size) {
@@ -384,16 +427,30 @@ void TransferEngine::GPUBufferRead(VkCommandBuffer command_buffer, const Transfe
 
         // ===== Acquire On Transfer Queue ===== //
 
+        // NOTE: Need to check if acquire is needed. If this is first time using the buffer we can skip this.
+        // Can we check this from the buffers owning queue? means we have to manage this manually, but should only need to
+        // change on creation and on transfer, both which are easy to automate.
+
         BufferOwnershipInfo acquire_ownership_info{
                 .command_buffer   = command_buffer,
                 .buffer           = job.read_job.src,
                 .old_queue_family = job.read_job.src_queue_family,
-                .new_queue_family = queue_family_index,
+                .new_queue_family = transfer_queue_family,
                 .stage_mask       = VK_PIPELINE_STAGE_2_COPY_BIT,
                 .access_mask      = VK_ACCESS_2_TRANSFER_READ_BIT,
         };
 
-        CmdAcquireBufferOwnership(acquire_ownership_info);
+        bool acquired_buffer = false;
+
+        // If the buffer is already owned by the queue we dont need to acquire.
+        if (job.read_job.src.owning_queue_family == u32_max) {
+                CmdAcquireBufferOwnership(acquire_ownership_info);
+                acquired_buffer = true;
+        }
+
+        // If we acquire we make sure the correct queue family has acquired
+        // If the buffer was not released then we need to make sure the buffer was in the tranfer family already
+        assert(job.read_job.src.owning_queue_family == transfer_queue_family && "Make sure you release buffers from other queue families before transfer.");
 
         // ===== Record Copy Commands ===== //
 
@@ -409,9 +466,13 @@ void TransferEngine::GPUBufferRead(VkCommandBuffer command_buffer, const Transfe
 
         // Swap new and old
         acquire_ownership_info.new_queue_family = acquire_ownership_info.old_queue_family;
-        acquire_ownership_info.old_queue_family = queue_family_index;
+        acquire_ownership_info.old_queue_family = transfer_queue_family;
 
-        CmdReleaseBufferOwnership(acquire_ownership_info);
+        // If the queue family stays the same we dont need to release.
+        if (job.read_job.src_queue_family != transfer_queue_family) {
+                CmdReleaseBufferOwnership(acquire_ownership_info);
+                std::println("Releasing the resource");
+        }
 
         // ===== End Command Buffer ===== //
 
@@ -419,12 +480,20 @@ void TransferEngine::GPUBufferRead(VkCommandBuffer command_buffer, const Transfe
 
         // ===== Submit ====== //
 
-        VkSemaphoreSubmitInfo wait_semaphore_info{
-                .sType       = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
-                .semaphore   = job.read_job.src.ownership_semaphore,
-                .stageMask   = VK_PIPELINE_STAGE_2_COPY_BIT,
-                .deviceIndex = 0, // Must be 0 if not using a device group.
-        };
+
+        std::vector<VkSemaphoreSubmitInfo> wait_semaphore_infos;
+
+        // Make sure we only wait on the release of the buffer if it was actually released
+        if (acquired_buffer) {
+                VkSemaphoreSubmitInfo wait_semaphore_info{
+                        .sType       = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
+                        .semaphore   = job.read_job.src.ownership_semaphore,
+                        .stageMask   = VK_PIPELINE_STAGE_2_COPY_BIT,
+                        .deviceIndex = 0, // Must be 0 if not using a device group.
+                };
+
+                wait_semaphore_infos.push_back(wait_semaphore_info);
+        }
 
         VkSemaphoreSubmitInfo signal_semaphore_info{
                 .sType       = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
@@ -441,8 +510,8 @@ void TransferEngine::GPUBufferRead(VkCommandBuffer command_buffer, const Transfe
 
         VkSubmitInfo2 submit_info{
                 .sType                    = VK_STRUCTURE_TYPE_SUBMIT_INFO_2,
-                .waitSemaphoreInfoCount   = 1,
-                .pWaitSemaphoreInfos      = &wait_semaphore_info,
+                .waitSemaphoreInfoCount   = (u32)wait_semaphore_infos.size(),
+                .pWaitSemaphoreInfos      = wait_semaphore_infos.data(),
                 .commandBufferInfoCount   = 1,
                 .pCommandBufferInfos      = &command_buffer_submit_info,
                 .signalSemaphoreInfoCount = 1,
@@ -459,6 +528,8 @@ void TransferEngine::GPUBufferRead(VkCommandBuffer command_buffer, const Transfe
 
 // u64 for size and offset?
 void TransferEngine::GPUBufferWrite(VkCommandBuffer command_buffer, const TransferJob& job) {
+        std::println("GPUBufferWrite Called");
+
         VkResult res;
 
         // ===== Begin Command Buffer ===== //
@@ -476,12 +547,17 @@ void TransferEngine::GPUBufferWrite(VkCommandBuffer command_buffer, const Transf
                 .command_buffer   = command_buffer,
                 .buffer           = job.write_job.dst,
                 .old_queue_family = job.write_job.dst_queue_family,
-                .new_queue_family = queue_family_index,
+                .new_queue_family = transfer_queue_family,
                 .stage_mask       = VK_PIPELINE_STAGE_2_COPY_BIT,
                 .access_mask      = VK_ACCESS_2_TRANSFER_WRITE_BIT,
         };
 
-        CmdAcquireBufferOwnership(acquire_ownership_info);
+        bool acquired_buffer = false;
+
+        if (job.write_job.dst.owning_queue_family == u32_max) {
+                CmdAcquireBufferOwnership(acquire_ownership_info);
+                acquired_buffer = true;
+        }
 
         // ===== Copy Data To Staging Buffer ===== //
 
@@ -502,9 +578,12 @@ void TransferEngine::GPUBufferWrite(VkCommandBuffer command_buffer, const Transf
 
         // Swap new and old
         acquire_ownership_info.new_queue_family = acquire_ownership_info.old_queue_family;
-        acquire_ownership_info.old_queue_family = queue_family_index;
+        acquire_ownership_info.old_queue_family = transfer_queue_family;
 
-        CmdReleaseBufferOwnership(acquire_ownership_info);
+        if (job.write_job.dst_queue_family != transfer_queue_family) {
+                CmdReleaseBufferOwnership(acquire_ownership_info);
+                std::println("Releasing Ownership");
+        }
 
         // ===== End Command Buffer ===== //
 
@@ -512,12 +591,19 @@ void TransferEngine::GPUBufferWrite(VkCommandBuffer command_buffer, const Transf
 
         // ===== Submit ===== //
 
-        VkSemaphoreSubmitInfo wait_semaphore_info{
-                .sType       = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
-                .semaphore   = job.write_job.dst.ownership_semaphore,
-                .stageMask   = VK_PIPELINE_STAGE_2_COPY_BIT,
-                .deviceIndex = 0, // Must be 0 if not using a device group.
-        };
+        std::vector<VkSemaphoreSubmitInfo> wait_semaphore_infos;
+
+        // Make sure we only wait on the release of the buffer if it was actually released
+        if (acquired_buffer) {
+                VkSemaphoreSubmitInfo wait_semaphore_info{
+                        .sType       = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
+                        .semaphore   = job.write_job.dst.ownership_semaphore,
+                        .stageMask   = VK_PIPELINE_STAGE_2_COPY_BIT,
+                        .deviceIndex = 0, // Must be 0 if not using a device group.
+                };
+
+                wait_semaphore_infos.push_back(wait_semaphore_info);
+        }
 
         VkSemaphoreSubmitInfo signal_semaphore_info{
                 .sType       = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
@@ -534,8 +620,8 @@ void TransferEngine::GPUBufferWrite(VkCommandBuffer command_buffer, const Transf
 
         VkSubmitInfo2 submit_info{
                 .sType                    = VK_STRUCTURE_TYPE_SUBMIT_INFO_2,
-                .waitSemaphoreInfoCount   = 1,
-                .pWaitSemaphoreInfos      = &wait_semaphore_info,
+                .waitSemaphoreInfoCount   = (u32)wait_semaphore_infos.size(),
+                .pWaitSemaphoreInfos      = wait_semaphore_infos.data(),
                 .commandBufferInfoCount   = 1,
                 .pCommandBufferInfos      = &command_buffer_submit_info,
                 .signalSemaphoreInfoCount = 1,
@@ -611,6 +697,8 @@ TransferJobID TransferEngine::QueueGPUBufferRead(GPUBufferReadInfo read_job) {
         job.type     = TransferJobType::Read;
         job.read_job = read_job;
 
+        job.transfer_index = u32_max;
+
         AddPendingJob(job.id);
 
         return job.id;
@@ -629,21 +717,31 @@ TransferJobID TransferEngine::QueueGPUBufferWrite(GPUBufferWriteInfo write_job) 
         job.type      = TransferJobType::Write;
         job.write_job = write_job;
 
+        job.transfer_index = u32_max;
+
         AddPendingJob(job.id);
 
         return job.id;
 }
 
 bool TransferEngine::Check(TransferJobID id) {
+        // std::println("Checking ID: {}", id);
+
         TransferJob& job = transfer_jobs[id];
+
+        if (job.transfer_index == u32_max) return false; // Not queued yet!
 
         VkFence fence = fences[job.transfer_index];
 
+        // Ahh, we need to see if we actually queued the job yet.
         VkResult res = vkGetFenceStatus(vulkan_device, fence);
 
         if (res == VK_SUCCESS) {
                 // Job Finished
                 fence_in_use[job.transfer_index] = false;
+
+                // Reset Fence - We already do before submitting...
+                // res = vkResetFences(vulkan_device, 1, &fences[job.transfer_index]);
 
                 // If Read Job need to copy to dst here!
                 if (job.type == TransferJobType::Read) {
@@ -657,12 +755,12 @@ bool TransferEngine::Check(TransferJobID id) {
                 FreeJob(id);
 
                 return true;
-        }
-        else if (res == VK_NOT_READY) {
+        } else if (res == VK_NOT_READY) {
                 return false;
-        }
-        else {
+        } else {
                 std::println("Failed Getting transfer fence status");
                 exit(res);
         }
+
+        return false;
 }

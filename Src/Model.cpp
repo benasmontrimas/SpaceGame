@@ -77,6 +77,7 @@ void Model::LoadFromOBJ(const std::string& file_name, const VmaAllocator& alloca
 void Model::Destroy(const VmaAllocator& allocator) {
         for (auto& mesh : meshes) {
                 vmaDestroyBuffer(allocator, mesh.buffer, mesh.buffer_allocation);
+                // DestroyGPUBuffer(vulkan_device, planet_density_buffer, vulkan_allocator);
         }
 }
 

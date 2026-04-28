@@ -20,69 +20,6 @@
 void Game::InitComputePipeline() {
         VkResult res;
 
-        // ===== Compute Descriptor Set Layout ===== //
-
-        // VkDescriptorSetLayoutBinding density_field_binding{
-        //         .binding         = 0,
-        //         .descriptorType  = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, // buffer we can write to.
-        //         .descriptorCount = 1,
-        //         .stageFlags      = VK_SHADER_STAGE_COMPUTE_BIT,
-        // };
-
-        // ===== Compute Descriptor Layout ===== //
-
-        // VkDescriptorSetLayoutCreateInfo compute_descriptor_layout_info{
-        //         .sType        = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
-        //         .bindingCount = 0,
-        //         .pBindings    = nullptr,
-        // };
-
-        // res = vkCreateDescriptorSetLayout(vulkan_device, &compute_descriptor_layout_info, nullptr, &compute_descriptor_set_layout);
-
-        // if (res != VK_SUCCESS) {
-        //         std::println("Failed creating compute descriptor set layout");
-        //         exit(res);
-        // }
-
-        // ===== Compute Descriptor Pool ===== //
-
-        // TODO: JUST USE ADDRESS POINTERS. means we dont need descriptor sets at all and can just push the pointers to output/input data.
-
-        // NOTE: How many do we want? one, and reuse, or many and allocate new descriptor set every time we want to run the shader?
-        // NOTE: Ideally want to be size of how many chunks we can load at a time.
-        // NOTE: But do we pre allocate them? why would we not?
-        // VkDescriptorPoolSize pool_size{
-        //         .type            = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-        //         .descriptorCount = 1,
-        // };
-
-        // VkDescriptorPoolCreateInfo pool_info{
-        //         .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO, .maxSets = 1, .poolSizeCount = 1, .pPoolSizes = &pool_size
-        // };
-
-        // res = vkCreateDescriptorPool(vulkan_device, &pool_info, nullptr, &compute_descriptor_pool);
-
-        // if (res != VK_SUCCESS) {
-        //         std::println("Failed creating compute descriptor pool");
-        //         exit(res);
-        // }
-
-        // ===== Allocate the descriptor Sets ===== //
-
-        // VkDescriptorSetAllocateInfo descriptor_set_allocation_info{
-        //         .sType              = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
-        //         .descriptorPool     = compute_descriptor_pool,
-        //         .descriptorSetCount = 1,
-        //         .pSetLayouts        = &compute_descriptor_set_layout,
-        // };
-
-        // res = vkAllocateDescriptorSets(vulkan_device, &descriptor_set_allocation_info, &compute_descriptor_set);
-
-        // if (res != VK_SUCCESS) {
-        //         std::println("Failed allocating compute descriptor sets");
-        //         exit(res);
-        // }
-
         // ===== Create Compute Pipeline Layout ===== //
 
         VkPushConstantRange push_constant_range{
@@ -198,12 +135,13 @@ void Game::InitComputePipeline() {
         VmaAllocationCreateFlags allocation_flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
                                                     VMA_ALLOCATION_CREATE_HOST_ACCESS_ALLOW_TRANSFER_INSTEAD_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT;
 
-        planet_density_buffer.buffer =
-                CreateGPUBuffer(vulkan_allocator, sizeof(float) * 32 * 32 * 32, VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT, allocation_flags);
+        planet_density_buffer = CreateGPUBuffer(vulkan_device, vulkan_allocator, sizeof(float) * 33 * 33 * 33, transfer_queue_family,
+                                                VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                                                allocation_flags);
 
         VkBufferDeviceAddressInfo planet_buffer_address_info{
                 .sType  = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO,
-                .buffer = planet_density_buffer.buffer.buffer,
+                .buffer = planet_density_buffer.buffer,
         };
 
         planet_density_buffer.device_address = vkGetBufferDeviceAddress(vulkan_device, &planet_buffer_address_info);
@@ -229,6 +167,8 @@ void Game::Init() {
 #ifdef DEBUG
         instance_layers.push_back("VK_LAYER_KHRONOS_validation");
         instance_layers.push_back("VK_LAYER_LUNARG_monitor");
+
+        std::println("Using Validation Layers");
 #endif
 
         VkInstanceCreateInfo instance_info{
@@ -365,16 +305,17 @@ void Game::Init() {
                 .pQueuePriorities = &queue_priorities,
         };
 
-        VkDeviceQueueCreateInfo transfer_queue_info {
-                .sType =       VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
+        VkDeviceQueueCreateInfo transfer_queue_info{
+                .sType            = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
                 .queueFamilyIndex = transfer_queue_family,
-                .queueCount = 1,
+                .queueCount       = 1,
                 .pQueuePriorities = &queue_priorities,
         };
 
-        VkDeviceQueueCreateInfo queue_infos[2] = {
+        VkDeviceQueueCreateInfo queue_infos[3] = {
                 graphics_queue_info,
                 compute_queue_info,
+                transfer_queue_info,
         };
 
         VkPhysicalDeviceVulkan12Features enabled_vk12_features{
@@ -399,7 +340,7 @@ void Game::Init() {
         VkDeviceCreateInfo logical_device_info{
                 .sType                   = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
                 .pNext                   = &enabled_vk13_features,
-                .queueCreateInfoCount    = 2,
+                .queueCreateInfoCount    = 3,
                 .pQueueCreateInfos       = queue_infos,
                 .enabledExtensionCount   = (u32)device_extensions.size(),
                 .ppEnabledExtensionNames = device_extensions.data(),
@@ -621,11 +562,12 @@ void Game::Init() {
                 VmaAllocationCreateFlags allocation_flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
                                                             VMA_ALLOCATION_CREATE_HOST_ACCESS_ALLOW_TRANSFER_INSTEAD_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT;
 
-                draw_data[i].buffer = CreateGPUBuffer(vulkan_allocator, sizeof(ShaderDrawData), VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT, allocation_flags);
+                draw_data[i] = CreateGPUBuffer(vulkan_device, vulkan_allocator, sizeof(ShaderDrawData), graphics_queue_family,
+                                               VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT, allocation_flags);
 
                 VkBufferDeviceAddressInfo uniform_buffer_address_info{
                         .sType  = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO,
-                        .buffer = draw_data[i].buffer.buffer,
+                        .buffer = draw_data[i].buffer,
                 };
 
                 draw_data[i].device_address = vkGetBufferDeviceAddress(vulkan_device, &uniform_buffer_address_info);
@@ -973,6 +915,10 @@ void Game::Shutdown() {
         // TODO: move this
         model.Destroy(vulkan_allocator);
 
+        // ===== Transfer ===== //
+
+        transfer_engine.Shutdown();
+
         // ===== Compute ===== //
 
         vkDestroyCommandPool(vulkan_device, compute_command_pool, nullptr);
@@ -988,7 +934,8 @@ void Game::Shutdown() {
         for (u32 i = 0; i < max_frames_in_flight; i++) {
                 vkDestroyFence(vulkan_device, fences[i], nullptr);
                 vkDestroySemaphore(vulkan_device, present_semaphores[i], nullptr);
-                vmaDestroyBuffer(vulkan_allocator, draw_data[i].buffer.buffer, draw_data[i].buffer.allocation);
+                // vmaDestroyBuffer(vulkan_allocator, draw_data[i].buffer, draw_data[i].allocation);
+                DestroyGPUBuffer(vulkan_device, draw_data[i], vulkan_allocator);
         }
 
         for (size_t i = 0; i < render_semaphores.size(); i++) {
@@ -1044,17 +991,55 @@ void Game::DispatchPlanetGen() {
                 exit(res);
         }
 
+        // NOTE: Only doing this because we write to the buffer for debug.
+        // Transition back to Compute Queue
+
+        BufferOwnershipInfo acquire_ownership_info{
+                .command_buffer   = compute_command_buffer,
+                .buffer           = planet_density_buffer,
+                .old_queue_family = transfer_engine.transfer_queue_family,
+                .new_queue_family = compute_queue_family,
+                .stage_mask       = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
+                .access_mask      = VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT,
+        };
+
+        CmdAcquireBufferOwnership(acquire_ownership_info);
+
         vkCmdBindPipeline(compute_command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute_pipeline);
 
-        PlanetCreationInfo planet_info{
-                .seed = 102,
+        constexpr u32 shader_thread_size = 4;
 
-                .buffer_address = planet_density_buffer.device_address,
+        PlanetCreationInfo planet_info{
+                .density_address = planet_density_buffer.device_address,
+
+                .chunk_cells = 32,
+                .chunk_dims  = 32,
+
+                .positions = { 0, 0, 0 },
+
+                .seed = 102,
         };
 
         vkCmdPushConstants(compute_command_buffer, compute_pipeline_layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(PlanetCreationInfo), &planet_info);
 
-        vkCmdDispatch(compute_command_buffer, 1, 1, 1);
+        u32 dispatch_count = (33 + (shader_thread_size - 1)) / shader_thread_size;
+
+        std::println("Dispatching {} compute shaders, should be {}", dispatch_count, 32 / 4);
+
+        vkCmdDispatch(compute_command_buffer, dispatch_count, dispatch_count, dispatch_count);
+
+        // NOTE: Just to read...
+
+        BufferOwnershipInfo release_ownership_info{
+                .command_buffer   = compute_command_buffer,
+                .buffer           = planet_density_buffer,
+                .old_queue_family = compute_queue_family,
+                .new_queue_family = transfer_engine.transfer_queue_family,
+                .stage_mask       = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
+                .access_mask      = VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT,
+        };
+
+        CmdReleaseBufferOwnership(release_ownership_info);
 
         res = vkEndCommandBuffer(compute_command_buffer);
 
@@ -1065,15 +1050,23 @@ void Game::DispatchPlanetGen() {
 
         // ===== Submit Commands ===== //
 
+        std::vector<VkSemaphore> wait_semaphores;
+        wait_semaphores.push_back(planet_density_buffer.transfer_semaphore);
+
+        std::vector<VkSemaphore> signal_semaphores;
+        signal_semaphores.push_back(planet_density_buffer.ownership_semaphore);
+
+        VkPipelineStageFlags flags = VK_PIPELINE_STAGE_TRANSFER_BIT;
+
         VkSubmitInfo submit_info{
                 .sType                = VK_STRUCTURE_TYPE_SUBMIT_INFO,
-                .waitSemaphoreCount   = 0,
-                .pWaitSemaphores      = nullptr,
-                .pWaitDstStageMask    = nullptr,
+                .waitSemaphoreCount   = (u32)wait_semaphores.size(),
+                .pWaitSemaphores      = wait_semaphores.data(),
+                .pWaitDstStageMask    = &flags,
                 .commandBufferCount   = 1,
                 .pCommandBuffers      = &compute_command_buffer,
-                .signalSemaphoreCount = 0,
-                .pSignalSemaphores    = nullptr,
+                .signalSemaphoreCount = (u32)signal_semaphores.size(),
+                .pSignalSemaphores    = signal_semaphores.data(),
         };
 
         res = vkQueueSubmit(compute_queue, 1, &submit_info, compute_fences[0]);
@@ -1089,7 +1082,7 @@ void Game::DispatchPlanetGen() {
         res = vkWaitForFences(vulkan_device, 1, &compute_fences[0], true, u64_max);
 
         if (res != VK_SUCCESS) {
-                std::println("Failed waiting on fence for rendering");
+                std::println("Failed waiting on fence for compute");
                 exit(res);
         }
 
@@ -1100,10 +1093,6 @@ void Game::DispatchPlanetGen() {
                 exit(res);
         }
         std::println("Waiting on Fence Finished");
-
-        // ===== Free Resources ===== //
-
-        vmaDestroyBuffer(vulkan_allocator, planet_density_buffer.buffer.buffer, planet_density_buffer.buffer.allocation);
 }
 
 void Game::Run() {
@@ -1112,7 +1101,62 @@ void Game::Run() {
         u64  last_time{ SDL_GetTicks() };
         bool running = true;
 
+        float* density_data = (float*)malloc(sizeof(float) * 33 * 33 * 33);
+
+        for (u32 i = 0; i < 33 * 33 * 33; i++) {
+                density_data[i] = 0;
+        }
+
+        GPUBufferWriteInfo write_info{
+                .src    = (u8*)&density_data[0],
+                .offset = 0,
+                .size   = sizeof(float) * 33 * 33 * 33,
+                .dst    = planet_density_buffer,
+
+                .dst_queue_family = compute_queue_family,
+        };
+
+        // Need to release and acquire around this.
+        // What happens when we acquire a resource that has not been released, but also isnt owned by anyone?
+        TransferJobID write_id = transfer_engine.QueueGPUBufferWrite(write_info);
+
+        // NOTE: Can not stall on check as if update is never called, we will never queue the job!
+        while (!transfer_engine.Check(write_id)) {
+                transfer_engine.Update();
+        }
+
+        free(density_data);
+
         DispatchPlanetGen();
+
+        float* vals = (float*)malloc(sizeof(float) * 33 * 33 * 33);
+
+        GPUBufferReadInfo read_job{
+                .src              = planet_density_buffer,
+                .offset           = 0,
+                .size             = sizeof(float) * 33 * 33 * 33,
+                .dst              = (u8*)vals,
+                .src_queue_family = compute_queue_family,
+        };
+
+        TransferJobID read_id = transfer_engine.QueueGPUBufferRead(read_job);
+
+        while (!transfer_engine.Check(read_id)) {
+                transfer_engine.Update();
+        }
+
+        // for (u32 i = 0; i < 33 * 33 * 33; i++) {
+        //         // if (i != (u32)vals[i])
+        //         std::println("{} : {}", i, vals[i]);
+        // }
+
+        free(vals);
+
+        // ===== Free Resources ===== //
+        // Why here?
+
+        // vmaDestroyBuffer(vulkan_allocator, planet_density_buffer.buffer, planet_density_buffer.allocation);
+        DestroyGPUBuffer(vulkan_device, planet_density_buffer, vulkan_allocator);
 
         while (running) {
                 // ===== Wait For GPU =====
@@ -1120,7 +1164,7 @@ void Game::Run() {
                 res = vkWaitForFences(vulkan_device, 1, &fences[frame_index], true, u64_max);
 
                 if (res != VK_SUCCESS) {
-                        std::println("Failed waiting on fence for rendering");
+                        std::println("Failed waiting on fence for rendering: {}", (i32)res);
                         exit(res);
                 }
 
@@ -1152,7 +1196,7 @@ void Game::Run() {
                 shader_draw_data.model = glm::translate(Mat4(1.0f), Vec3{ 0, 0, 0 });
                 shader_draw_data.model = glm::scale(shader_draw_data.model, { 0.1f, 0.1f, 0.1f });
 
-                memcpy(draw_data[frame_index].buffer.allocation_info.pMappedData, &shader_draw_data, sizeof(ShaderDrawData));
+                memcpy(draw_data[frame_index].allocation_info.pMappedData, &shader_draw_data, sizeof(ShaderDrawData));
 
                 VkCommandBuffer command_buffer = graphics_command_buffers[frame_index];
 

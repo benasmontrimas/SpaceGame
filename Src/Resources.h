@@ -13,6 +13,8 @@ struct GPUBuffer {
 
         // ===== Synchronization ====== //
 
+        u32         owning_queue_family;
+        // TODO: Free these semaphores -> Create a DestroyGPUBuffer function!
         VkSemaphore ownership_semaphore;
         // Used by the transfer engine as it never keeps ownership of the buffer, but reusing ownership_semaphore can result in
         // 2 queue families waiting on the same semaphore, and im not sure how ordering works, if owning queue recieves it first
@@ -26,11 +28,13 @@ constexpr VmaAllocationCreateFlags GPUBuffer_STAGING  = VMA_ALLOCATION_CREATE_HO
 // What is this one used for? I just use the staging buffer.
 constexpr VmaAllocationCreateFlags GPUBuffer_READBACK = VMA_ALLOCATION_CREATE_HOST_ACCESS_RANDOM_BIT;
 
+[[nodiscard]]
+GPUBuffer CreateGPUBuffer(VkDevice vulkan_device, VmaAllocator allocator, u64 size, u32 owning_queue_family, VkBufferUsageFlags usage,
+                          VmaAllocationCreateFlags allocation_flags, VmaMemoryUsage memory_usage = VMA_MEMORY_USAGE_AUTO);
+GPUBuffer CreateStagingBuffer(VkDevice vulkan_device, VmaAllocator allocator, u64 size, u32 owning_queue_family);
+GPUBuffer CreateReadbackBuffer(VkDevice vulkan_device, VmaAllocator allocator, u64 size, u32 owning_queue_family);
 
-GPUBuffer CreateGPUBuffer(VmaAllocator allocator, u64 size, VkBufferUsageFlags usage, VmaAllocationCreateFlags allocation_flags,
-                          VmaMemoryUsage memory_usage = VMA_MEMORY_USAGE_AUTO);
-GPUBuffer CreateStagingBuffer(VmaAllocator allocator, u64 size);
-GPUBuffer CreateReadbackBuffer(VmaAllocator allocator, u64 size);
+void DestroyGPUBuffer(VkDevice vulkan_device, GPUBuffer& buffer, VmaAllocator allocator);
 
 // ===== Buffers2 Interface ===== //
 
@@ -44,6 +48,9 @@ struct BufferOwnershipInfo {
         VkPipelineStageFlags2 stage_mask;
         VkAccessFlags2        access_mask;
 };
+
+void CmdReleaseBufferOwnership(BufferOwnershipInfo& info);
+void CmdAcquireBufferOwnership(BufferOwnershipInfo& info);
 
 void ReadFromGPUBuffer(GPUBuffer src, u32 offset, u32 size, u8* dst, GPUBuffer staging_buffer);
 void WriteToGPUBuffer(GPUBuffer dst, u32 offset, u32 size, u8* src, GPUBuffer staging_buffer);
@@ -104,7 +111,7 @@ struct GPUBufferWriteInfo {
         GPUBuffer dst;
 
         u32          dst_queue_family;
-        BufferRegion staging_buffer_region;
+        BufferRegion staging_buffer_region; // This doesnt really make sense here..
 };
 
 enum class TransferJobType : u32 {
@@ -163,7 +170,7 @@ struct TransferEngine {
 
         VkDevice vulkan_device;
 
-        u32     queue_family_index;
+        u32     transfer_queue_family;
         VkQueue queue;
 
         GPUBuffer    staging_buffer;

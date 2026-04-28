@@ -27,15 +27,20 @@ struct ShaderDrawData {
         Mat4 model;
 };
 
-struct UniformBuffer {
-        GPUBuffer       buffer;
-        VkDeviceAddress device_address;
-};
-
 struct PlanetCreationInfo {
-        u32 seed;
+        VkDeviceAddress density_address;         // 8
+        VkDeviceAddress triangle_offset_address; // 16
+        VkDeviceAddress triangle_address;        // 24
 
-        VkDeviceAddress buffer_address;
+        u32 chunk_cells; // 28
+        u32 chunk_dims;  // 32
+
+        Vec3 positions; // 44
+
+        u32 seed; // 48
+
+        VkDeviceAddress edge_table_address;     // 56
+        VkDeviceAddress triangle_table_address; // 64
 };
 
 struct Game {
@@ -77,7 +82,7 @@ struct Game {
         VkImageView   depth_image_view;
         VmaAllocation depth_allocation;
 
-        UniformBuffer draw_data[max_frames_in_flight];
+        GPUBuffer draw_data[max_frames_in_flight];
 
         std::vector<VkSemaphore> render_semaphores;
         VkSemaphore              present_semaphores[max_frames_in_flight];
@@ -127,6 +132,6 @@ struct Game {
         bool swapchain_needs_resizing{ false };
 
 
-        UniformBuffer planet_density_buffer;
-        Model         model;
+        GPUBuffer planet_density_buffer;
+        Model     model;
 };
