@@ -1,3 +1,9 @@
+/*
+NOTE:
+- Implement decent noise functions in a seperate file to include.
+- Use includes well, this will make my life VERY easy.
+*/
+
 
 struct FieldData {
         float density;
@@ -7,23 +13,25 @@ struct TriangleData {
         uint traingles[15];
 };
 
-// Push constant
+// Push constant - Max 256 Bytes
 struct PlanetCreationData {
-        float* density_array;               // 8    +8
-        uint* triangle_offset_array;       // 16   +8
-        FieldData* triangle_array;              // 24   +8
+        // Creation Info
+        uint seed; // 0 + 4 = 4
+        float3 position; // 4 + 12 = 16 -----
+        uint chunk_cells; // 16 + 4 = 20
+        uint chunk_dims; // 20 + 4 = 24
 
-        // How many cells within the chunk.
-        uint chunk_cells;                       // 28   +4
-        // How many units the chunk spans. ie, chunk_cells being 128, and chunk_dims being 32 would mean each cell is 0.25 units.
-        uint chunk_dims;                        // 32   +4
+        // Input Arrays
+        uint* edge_table; // 24 + 8 = 32 -----
+        TriangleData* triangle_table; // 32 + 8 = 40
 
-        float3 position;                        // 44   +12
+        // Output Arrays
+        float* density_array; // 40 + 8 = 48 -----
+        uint* triangle_offset_array; // 48 + 8 = 56
+        FieldData* triangle_array; // 56 + 8 = 64 -----
 
-        uint seed;                              // 48   +4
+        Edge* edges; // 64 + 8 = 72
 
-        uint* edge_table;                       // 56   +8
-        TriangleData* triangle_table            // 64   +8
 };
 
 // NOTE:
@@ -177,73 +185,73 @@ void TriangleCount(uniform PlanetCreationData info, uint3 dispatch_id : SV_Dispa
         float half_cell_width = cell_width / 2;
 
         if (edge_table[cube_index] & (1 << 0)) {
-                vertex_list[0] = GetEdgeVertex(positions[0], positions[1], info.density_array[0], info.density_array[1];
+                vertex_list[0] = GetEdgeVertex(positions[0], positions[1], info.density_array[0], info.density_array[1]);
                 reference_list[0] = position + float3(0, half_cell_width, half_cell_width);
                 reference_list[0].x = vertex_list[0].x;
         }
 
         if (edge_table[cube_index] & (1 << 1)) {
-                vertex_list[1] = GetEdgeVertex(positions[1], positions[2], info.density_array[1], info.density_array[2];
+                vertex_list[1] = GetEdgeVertex(positions[1], positions[2], info.density_array[1], info.density_array[2]);
                 reference_list[1] = position + float3(half_cell_width, half_cell_width, 0);
                 reference_list[1].z = vertex_list[1].z;
         }
 
         if (edge_table[cube_index] & (1 << 2)) {
-                vertex_list[2] = GetEdgeVertex(positions[2], positions[3], info.density_array[2], info.density_array[3];
+                vertex_list[2] = GetEdgeVertex(positions[2], positions[3], info.density_array[2], info.density_array[3]);
                 reference_list[2] = position + float3(0, half_cell_width, half_cell_width);
                 reference_list[2].x = vertex_list[2].x;
         }
 
         if (edge_table[cube_index] & (1 << 3)) {
-                vertex_list[3] = GetEdgeVertex(positions[3], positions[0], info.density_array[3], info.density_array[0];
+                vertex_list[3] = GetEdgeVertex(positions[3], positions[0], info.density_array[3], info.density_array[0]);
                 reference_list[3] = position + float3(half_cell_width, half_cell_width, 0);
                 reference_list[3].z = vertex_list[3].z;
         }
 
         if (edge_table[cube_index] & (1 << 4)) {
-                vertex_list[4] = GetEdgeVertex(positions[4], positions[5], info.density_array[4], info.density_array[5];
+                vertex_list[4] = GetEdgeVertex(positions[4], positions[5], info.density_array[4], info.density_array[5]);
                 reference_list[4] = position + float3(0, half_cell_width, half_cell_width);
                 reference_list[4].x = vertex_list[4].x;
         }
 
         if (edge_table[cube_index] & (1 << 5)) {
-                vertex_list[5] = GetEdgeVertex(positions[5], positions[6], info.density_array[5], info.density_array[6];
+                vertex_list[5] = GetEdgeVertex(positions[5], positions[6], info.density_array[5], info.density_array[6]);
                 reference_list[5] = position + float3(half_cell_width, half_cell_width, 0);
                 reference_list[5].z = vertex_list[5].z;
         }
 
         if (edge_table[cube_index] & (1 << 6)) {
-                vertex_list[6] = GetEdgeVertex(positions[6], positions[7], info.density_array[6], info.density_array[7];
+                vertex_list[6] = GetEdgeVertex(positions[6], positions[7], info.density_array[6], info.density_array[7]);
                 reference_list[6] = position + float3(0, half_cell_width, half_cell_width);
                 reference_list[6].x = vertex_list[6].x;
         }
 
         if (edge_table[cube_index] & (1 << 7)) {
-                vertex_list[7] = GetEdgeVertex(positions[7], positions[4], info.density_array[7], info.density_array[4];
+                vertex_list[7] = GetEdgeVertex(positions[7], positions[4], info.density_array[7], info.density_array[4]);
                 reference_list[7] = position + float3(half_cell_width, half_cell_width, 0);
                 reference_list[7].z = vertex_list[7].z;
         }
 
         if (edge_table[cube_index] & (1 << 8)) {
-                vertex_list[8] = GetEdgeVertex(positions[0], positions[4], info.density_array[0], info.density_array[4];
+                vertex_list[8] = GetEdgeVertex(positions[0], positions[4], info.density_array[0], info.density_array[4]);
                 reference_list[8] = position + float3(half_cell_width, 0, half_cell_width);
                 reference_list[8].y = vertex_list[8].y;
         }
 
         if (edge_table[cube_index] & (1 << 9)) {
-                vertex_list[9] = GetEdgeVertex(positions[1], positions[5], info.density_array[1], info.density_array[5];
+                vertex_list[9] = GetEdgeVertex(positions[1], positions[5], info.density_array[1], info.density_array[5]);
                 reference_list[9] = position + float3(half_cell_width, 0, half_cell_width);
                 reference_list[9].y = vertex_list[9].y;
         }
 
         if (edge_table[cube_index] & (1 << 10)) {
-                vertex_list[10] = GetEdgeVertex(positions[2], positions[6], info.density_array[2], info.density_array[6];
+                vertex_list[10] = GetEdgeVertex(positions[2], positions[6], info.density_array[2], info.density_array[6]);
                 reference_list[10] = position + float3(half_cell_width, 0, half_cell_width);
                 reference_list[10].y = vertex_list[10].y;
         }
 
         if (edge_table[cube_index] & (1 << 11)) {
-                vertex_list[11] = GetEdgeVertex(positions[3], positions[7], info.density_array[3], info.density_array[7];
+                vertex_list[11] = GetEdgeVertex(positions[3], positions[7], info.density_array[3], info.density_array[7]);
                 reference_list[11] = position + float3(half_cell_width, 0, half_cell_width);
                 reference_list[11].y = vertex_list[11].y;
         }
@@ -262,10 +270,12 @@ void TriangleCount(uniform PlanetCreationData info, uint3 dispatch_id : SV_Dispa
                         - Store in edge array. x_edges count = ((cell_count + 1) ^ 2) * (cell_count)
                 */
 
+                uint triangle_offset = triangle_offset_array[index];
+
                 // NOTE: How can we just output just index of vertex and have vertex in another array... Loop edges not cells
-                vertices[offset + triangle_count + 0].position = vertex_list[triangle_table[cube_index][i + 0]];
-                vertices[offset + triangle_count + 1].position = vertex_list[triangle_table[cube_index][i + 1]];
-                vertices[offset + triangle_count + 2].position = vertex_list[triangle_table[cube_index][i + 2]];
+                vertices[triangle_offset + triangle_count + 0].position = vertex_list[triangle_table[cube_index][i + 0]];
+                vertices[triangle_offset + triangle_count + 1].position = vertex_list[triangle_table[cube_index][i + 1]];
+                vertices[triangle_offset + triangle_count + 2].position = vertex_list[triangle_table[cube_index][i + 2]];
 
                 // ===== Calc Triangle Normal ===== //
 
@@ -301,10 +311,19 @@ void TriangleCount(uniform PlanetCreationData info, uint3 dispatch_id : SV_Dispa
 // Can also reduce memory using u16, but can we guarantee less that 65k verts? Difficult to guarantee at 128, a single row where each cell has 4 verts... Would need to test.
 struct Edge {
         uint edge_case; // 0, 1, 2, or 3
-        uint start_index; // I thought order would matter but it doesnt... Maybe it does? y, z, x means we only need to check edges (x, y, z), (x, y + 1, z), (x, y, z + 1), (x, y + 1, z + 1)
+
+        // uint start_index; // I thought order would matter but it doesnt... Maybe it does? y, z, x means we only need to check edges (x, y, z), (x, y + 1, z), (x, y, z + 1), (x, y + 1, z + 1)
         // Extra edges needed to check - (y + 1).y, (y + 1, z + 1).y and .x, (z + 1).z
         // Can store this in edge_case? when we check if it has an intersect just set some bit in edge_case to 1 for each x,y,z -> want but order of xzy? doesnt matter. edge_case |= ((edge_case ^ (edge_case >> 1)) & 1) << x_bit;
         // OR if (density ^ last_density) edge_index << x_bit; Much simpler...
+};
+
+struct EdgeSum {
+        uint vertex_offset;
+        uint vertex_count;
+
+        uint triangle_offset;
+        uint triangle_count;
 };
 
 // If we can guarantee less than 1024 triangles in a row, we can use an edge and store 10 bits per count in edge_case, and start_index as triangle count.

@@ -47,3 +47,23 @@ project "SpaceGame"
               -- kind "WindowedApp"
                 defines { "RELEASE" }
                 optimize "On"
+
+project "ShaderCheck"
+        kind "ConsoleApp"
+        language "C++"
+        cppdialect "C++23"
+        location "Tools/Build"
+
+        files { "Tools/ShaderCheck.cpp" }
+
+        targetdir "Tools/Bin/%{cfg.buildcfg}"
+        
+        includedirs { "Src/" }
+        externalincludedirs { "$(VULKAN_SDK)/include" }
+
+        warnings "Extra"
+
+        enableunitybuild "On"
+        externalwarnings "Off"
+
+        links { "$(VULKAN_SDK)/lib/slang" }
