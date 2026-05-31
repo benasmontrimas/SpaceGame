@@ -138,18 +138,16 @@ int main(int argc, const char* argv[]) {
         for (u32 i = 0; i < entry_count; i++) {
                 slang::EntryPointReflection* entry_point = program_layout->getEntryPointByIndex(i);
 
-                std::println("Name: {}", entry_point->getName());
+                std::println("Entry Point: {}", entry_point->getName());
 
                 u32 variable_count = entry_point->getParameterCount();
 
                 for (u32 v = 0; v < variable_count; v++) {
                         slang::VariableLayoutReflection* variable = entry_point->getParameterByIndex(v);
 
-                        std::println("  Name: {}", variable->getName());
+                        std::println("  Variable: {}", variable->getName());
                 }
         }
-
-        slang::printProgramLayout(program_layout, SLANG_SPIRV);
 }
 
 

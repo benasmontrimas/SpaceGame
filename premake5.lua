@@ -4,49 +4,71 @@ workspace "SpaceGame"
         architecture "x64"
 
 project "SpaceGame"
+        -- Language setup --
         kind "ConsoleApp"
         language "C++"
         cppdialect "C++23"
+
+        -- Output Location --
         location "Build/"
-
-        files { "Src/**.h", "Src/**.cpp" }
-
         targetdir "Bin/%{cfg.buildcfg}"
 
+        -- Input Locations --
+        files { "Src/**.h", "Src/**.cpp" }
         includedirs { "Src/" }
-        externalincludedirs { "External/", "External/KTX", "$(VULKAN_SDK)/include" }
 
-        warnings "Extra"
+        -- External Libraries --
+        externalincludedirs {
+                "External",
+                "External/KTX",
+                "$(VULKAN_SDK)/include",
+        }
 
-        enableunitybuild "On"
+        libdirs {
+                "$(VULKAN_SDK)/lib/",
+        }
+
+        links {
+                "vulkan",
+                "SDL3",
+                "External/KTX/lib/ktx",
+                "volk",
+                "slang",
+        }
+
+        -- Settings --
         externalwarnings "Off"
-
         defines { "VK_NO_PROTOTYPES" }
 
-        links { "$(VULKAN_SDK)/lib/vulkan", "External/KTX/lib/ktx", "$(VULKAN_SDK)/lib/SDL3", "$(VULKAN_SDK)/lib/volk", "$(VULKAN_SDK)/lib/slang"}
+        -- externalincludedirs { "External/", "External/KTX", "$(VULKAN_SDK)/include" }
+        -- warnings "Extra"
+        -- enableunitybuild "On"
 
-        filter "platforms:Windows"
-                defines { "OS_WINDOWS" }
-                system ("windows")
 
-        filter "platforms:Linux"
-                defines { "OS_LINUX" }
-                system ("linux")
-                disablewarnings { "missing-field-initializers" }
+        -- links { "$(VULKAN_SDK)/lib/vulkan", "External/KTX/lib/ktx", "$(VULKAN_SDK)/lib/SDL3", "$(VULKAN_SDK)/lib/volk", "$(VULKAN_SDK)/lib/slang"}
 
-        filter "configurations:Debug"
-                defines { "DEBUG", "DEBUG_TRACE", "DEBUG_INFO", "DEBUG_WARNINGS"}
-                symbols "On"
+        -- filter "platforms:Windows"
+        --         defines { "OS_WINDOWS" }
+        --         system ("windows")
 
-        filter "configurations:Development"
-                defines { "DEBUG", "DEBUG_TRACE", "DEBUG_INFO", "DEBUG_WARNINGS"}
-                symbols "On"
-                optimize "Debug"
+        -- filter "platforms:Linux"
+        --         defines { "OS_LINUX" }
+        --         system ("linux")
+        --         disablewarnings { "missing-field-initializers" }
 
-        filter "configurations:Release"
-              -- kind "WindowedApp"
-                defines { "RELEASE" }
-                optimize "On"
+        -- filter "configurations:Debug"
+        --         defines { "DEBUG", "DEBUG_TRACE", "DEBUG_INFO", "DEBUG_WARNINGS"}
+        --         symbols "On"
+
+        -- filter "configurations:Development"
+        --         defines { "DEBUG", "DEBUG_TRACE", "DEBUG_INFO", "DEBUG_WARNINGS"}
+        --         symbols "On"
+        --         optimize "Debug"
+
+        -- filter "configurations:Release"
+        --       -- kind "WindowedApp"
+        --         defines { "RELEASE" }
+        --         optimize "On"
 
 project "ShaderCheck"
         kind "ConsoleApp"
@@ -57,7 +79,7 @@ project "ShaderCheck"
         files { "Tools/ShaderCheck.cpp" }
 
         targetdir "Tools/Bin/%{cfg.buildcfg}"
-        
+
         includedirs { "Src/" }
         externalincludedirs { "$(VULKAN_SDK)/include" }
 

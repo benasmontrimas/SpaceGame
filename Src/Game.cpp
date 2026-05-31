@@ -3,15 +3,15 @@
 #include "Resources.h"
 
 #define VMA_IMPLEMENTATION
-#include <vma/vk_mem_alloc.h>
+#include "vma/vk_mem_alloc.h"
 
 #define VOLK_IMPLEMENTATION
-#include <volk/volk.h>
+#include "volk/volk.h"
 
-#include "SDL3/SDL.h"
-#include "SDL3/SDL_vulkan.h"
-#include <ktx.h>
-#include <ktxvulkan.h>
+#include "ktx.h"
+#include "ktxvulkan.h"
+#include <SDL3/SDL.h>
+#include <SDL3/SDL_vulkan.h>
 
 #include <array>
 #include <print>
@@ -44,7 +44,7 @@ void Game::InitComputePipeline() {
 
         // ===== Compute Shaders ===== //
         Slang::ComPtr<slang::IBlob>   diagnostics;
-        Slang::ComPtr<slang::IModule> slang_module{ slang_session->loadModuleFromSource("compute", "Assets/Shaders/compute.slang", nullptr,
+        Slang::ComPtr<slang::IModule> slang_module{ slang_session->loadModuleFromSource("MarchingCubes", "Assets/Shaders/MarchingCubes.slang", nullptr,
                                                                                         diagnostics.writeRef()) };
         // or slang_session->loadModule("compute");
 
@@ -74,7 +74,7 @@ void Game::InitComputePipeline() {
                 .sType  = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
                 .stage  = VK_SHADER_STAGE_COMPUTE_BIT,
                 .module = shader_module,
-                .pName  = "main",
+                .pName  = "Pass1",
         };
 
         // ===== Create Compute Pipeline ===== //

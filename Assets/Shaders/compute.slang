@@ -74,9 +74,9 @@ float GenerateDensity(float3 position, uint seed) {
         return density;
 }
 
-float3 GetEdgeVertex(float3 a, float3 b, float a_density, float b_density) {
+// float3 GetEdgeVertex(float3 a, float3 b, float a_density, float b_density) {
 
-}
+// }
 
 /*
 NOTE:
@@ -122,187 +122,187 @@ void main(uniform PlanetCreationData planet_creation_data, uint3 dispatch_id : S
 [shader("compute")]
 [numthreads(4, 4, 4)]
 void TriangleCount(uniform PlanetCreationData info, uint3 dispatch_id : SV_DispatchThreadID) {
-        // TODO: Count triangles needed for each cell and return
-        // CPU Needs to then sum and create buffer for triangles, plus provide offsets for next stage.
+        // // TODO: Count triangles needed for each cell and return
+        // // CPU Needs to then sum and create buffer for triangles, plus provide offsets for next stage.
 
-        uint  thread_count = 4;
-        uint output_dims  = info.chunk_cells;
+        // uint  thread_count = 4;
+        // uint output_dims  = info.chunk_cells;
 
-        // Do we assume we area always in bounds?
-        if (dispatch_id.x >= output_dims || dispatch_id.y >= output_dims || dispatch_id.z >= output_dims) {
-                return;
-        }
+        // // Do we assume we area always in bounds?
+        // if (dispatch_id.x >= output_dims || dispatch_id.y >= output_dims || dispatch_id.z >= output_dims) {
+        //         return;
+        // }
 
-        // ===== Calculate the Ouput Index ===== //
-        uint index = dispatch_id.x + dispatch_id.y * output_dims + dispatch_id.z * output_dims * output_dims;
+        // // ===== Calculate the Ouput Index ===== //
+        // uint index = dispatch_id.x + dispatch_id.y * output_dims + dispatch_id.z * output_dims * output_dims;
 
-        // ===== Get Indices for density ===== //
+        // // ===== Get Indices for density ===== //
 
-        uint output_dims_squared = output_dims * output_dims;
+        // uint output_dims_squared = output_dims * output_dims;
 
-        uint cell_vertex_indices[8];
+        // uint cell_vertex_indices[8];
 
-        cell_vertex_indices[0] = index;
-        cell_vertex_indices[1] = index + 1;
-        cell_vertex_indices[2] = index + 1 + output_dims_squared;
-        cell_vertex_indices[3] = index + output_dims_squared;
-        cell_vertex_indices[4] = index + output_dims;
-        cell_vertex_indices[5] = index + output_dims + 1;
-        cell_vertex_indices[6] = index + output_dims + 1 + output_dims_squared;
-        cell_vertex_indices[7] = index + output_dims + output_dims_squared;
+        // cell_vertex_indices[0] = index;
+        // cell_vertex_indices[1] = index + 1;
+        // cell_vertex_indices[2] = index + 1 + output_dims_squared;
+        // cell_vertex_indices[3] = index + output_dims_squared;
+        // cell_vertex_indices[4] = index + output_dims;
+        // cell_vertex_indices[5] = index + output_dims + 1;
+        // cell_vertex_indices[6] = index + output_dims + 1 + output_dims_squared;
+        // cell_vertex_indices[7] = index + output_dims + output_dims_squared;
 
-        // ===== Get Cell Vertices Density ===== //
-        uint cube_index = 0;
+        // // ===== Get Cell Vertices Density ===== //
+        // uint cube_index = 0;
 
-        for (uint i = 0; i < 8; i++) {
-                // Why do we use i as index? This is defo wrong
-                if (info.density_array[i] < 0.0f) cube_index |= (1 << i);
-        }
+        // for (uint i = 0; i < 8; i++) {
+        //         // Why do we use i as index? This is defo wrong
+        //         if (info.density_array[i] < 0.0f) cube_index |= (1 << i);
+        // }
 
-        if (info.edge_table[cube_index] == 0) {
-                return;
-        }
+        // if (info.edge_table[cube_index] == 0) {
+        //         return;
+        // }
 
-        // ===== v0 Position ===== //
-        float3 relative_position = (float3(dispatch_id) / info.chunk_cells) * info.chunk_dims;
-        float3 position          = info.position + relative_position;
-        float cell_width = info.chunk_dims / info.chunk_cells;
+        // // ===== v0 Position ===== //
+        // float3 relative_position = (float3(dispatch_id) / info.chunk_cells) * info.chunk_dims;
+        // float3 position          = info.position + relative_position;
+        // float cell_width = info.chunk_dims / info.chunk_cells;
 
-        float3 positions[8] = {
-                position,
-                position + float3(cell_width, 0, 0),
-                position + float3(cell_width, 0, cell_width),
-                position + float3(0, 0, cell_width),
-                position + float3(0, cell_width, 0),
-                position + float3(cell_width, cell_width, 0),
-                position + float3(cell_width, cell_width, cell_width),
-                position + float3(0, cell_width, cell_width),
-        };
+        // float3 positions[8] = {
+        //         position,
+        //         position + float3(cell_width, 0, 0),
+        //         position + float3(cell_width, 0, cell_width),
+        //         position + float3(0, 0, cell_width),
+        //         position + float3(0, cell_width, 0),
+        //         position + float3(cell_width, cell_width, 0),
+        //         position + float3(cell_width, cell_width, cell_width),
+        //         position + float3(0, cell_width, cell_width),
+        // };
 
-        float3 vertex_list[12];
-        float3 reference_list[12];
+        // float3 vertex_list[12];
+        // float3 reference_list[12];
 
-        float half_cell_width = cell_width / 2;
+        // float half_cell_width = cell_width / 2;
 
-        if (edge_table[cube_index] & (1 << 0)) {
-                vertex_list[0] = GetEdgeVertex(positions[0], positions[1], info.density_array[0], info.density_array[1]);
-                reference_list[0] = position + float3(0, half_cell_width, half_cell_width);
-                reference_list[0].x = vertex_list[0].x;
-        }
+        // if (edge_table[cube_index] & (1 << 0)) {
+        //         vertex_list[0] = GetEdgeVertex(positions[0], positions[1], info.density_array[0], info.density_array[1]);
+        //         reference_list[0] = position + float3(0, half_cell_width, half_cell_width);
+        //         reference_list[0].x = vertex_list[0].x;
+        // }
 
-        if (edge_table[cube_index] & (1 << 1)) {
-                vertex_list[1] = GetEdgeVertex(positions[1], positions[2], info.density_array[1], info.density_array[2]);
-                reference_list[1] = position + float3(half_cell_width, half_cell_width, 0);
-                reference_list[1].z = vertex_list[1].z;
-        }
+        // if (edge_table[cube_index] & (1 << 1)) {
+        //         vertex_list[1] = GetEdgeVertex(positions[1], positions[2], info.density_array[1], info.density_array[2]);
+        //         reference_list[1] = position + float3(half_cell_width, half_cell_width, 0);
+        //         reference_list[1].z = vertex_list[1].z;
+        // }
 
-        if (edge_table[cube_index] & (1 << 2)) {
-                vertex_list[2] = GetEdgeVertex(positions[2], positions[3], info.density_array[2], info.density_array[3]);
-                reference_list[2] = position + float3(0, half_cell_width, half_cell_width);
-                reference_list[2].x = vertex_list[2].x;
-        }
+        // if (edge_table[cube_index] & (1 << 2)) {
+        //         vertex_list[2] = GetEdgeVertex(positions[2], positions[3], info.density_array[2], info.density_array[3]);
+        //         reference_list[2] = position + float3(0, half_cell_width, half_cell_width);
+        //         reference_list[2].x = vertex_list[2].x;
+        // }
 
-        if (edge_table[cube_index] & (1 << 3)) {
-                vertex_list[3] = GetEdgeVertex(positions[3], positions[0], info.density_array[3], info.density_array[0]);
-                reference_list[3] = position + float3(half_cell_width, half_cell_width, 0);
-                reference_list[3].z = vertex_list[3].z;
-        }
+        // if (edge_table[cube_index] & (1 << 3)) {
+        //         vertex_list[3] = GetEdgeVertex(positions[3], positions[0], info.density_array[3], info.density_array[0]);
+        //         reference_list[3] = position + float3(half_cell_width, half_cell_width, 0);
+        //         reference_list[3].z = vertex_list[3].z;
+        // }
 
-        if (edge_table[cube_index] & (1 << 4)) {
-                vertex_list[4] = GetEdgeVertex(positions[4], positions[5], info.density_array[4], info.density_array[5]);
-                reference_list[4] = position + float3(0, half_cell_width, half_cell_width);
-                reference_list[4].x = vertex_list[4].x;
-        }
+        // if (edge_table[cube_index] & (1 << 4)) {
+        //         vertex_list[4] = GetEdgeVertex(positions[4], positions[5], info.density_array[4], info.density_array[5]);
+        //         reference_list[4] = position + float3(0, half_cell_width, half_cell_width);
+        //         reference_list[4].x = vertex_list[4].x;
+        // }
 
-        if (edge_table[cube_index] & (1 << 5)) {
-                vertex_list[5] = GetEdgeVertex(positions[5], positions[6], info.density_array[5], info.density_array[6]);
-                reference_list[5] = position + float3(half_cell_width, half_cell_width, 0);
-                reference_list[5].z = vertex_list[5].z;
-        }
+        // if (edge_table[cube_index] & (1 << 5)) {
+        //         vertex_list[5] = GetEdgeVertex(positions[5], positions[6], info.density_array[5], info.density_array[6]);
+        //         reference_list[5] = position + float3(half_cell_width, half_cell_width, 0);
+        //         reference_list[5].z = vertex_list[5].z;
+        // }
 
-        if (edge_table[cube_index] & (1 << 6)) {
-                vertex_list[6] = GetEdgeVertex(positions[6], positions[7], info.density_array[6], info.density_array[7]);
-                reference_list[6] = position + float3(0, half_cell_width, half_cell_width);
-                reference_list[6].x = vertex_list[6].x;
-        }
+        // if (edge_table[cube_index] & (1 << 6)) {
+        //         vertex_list[6] = GetEdgeVertex(positions[6], positions[7], info.density_array[6], info.density_array[7]);
+        //         reference_list[6] = position + float3(0, half_cell_width, half_cell_width);
+        //         reference_list[6].x = vertex_list[6].x;
+        // }
 
-        if (edge_table[cube_index] & (1 << 7)) {
-                vertex_list[7] = GetEdgeVertex(positions[7], positions[4], info.density_array[7], info.density_array[4]);
-                reference_list[7] = position + float3(half_cell_width, half_cell_width, 0);
-                reference_list[7].z = vertex_list[7].z;
-        }
+        // if (edge_table[cube_index] & (1 << 7)) {
+        //         vertex_list[7] = GetEdgeVertex(positions[7], positions[4], info.density_array[7], info.density_array[4]);
+        //         reference_list[7] = position + float3(half_cell_width, half_cell_width, 0);
+        //         reference_list[7].z = vertex_list[7].z;
+        // }
 
-        if (edge_table[cube_index] & (1 << 8)) {
-                vertex_list[8] = GetEdgeVertex(positions[0], positions[4], info.density_array[0], info.density_array[4]);
-                reference_list[8] = position + float3(half_cell_width, 0, half_cell_width);
-                reference_list[8].y = vertex_list[8].y;
-        }
+        // if (edge_table[cube_index] & (1 << 8)) {
+        //         vertex_list[8] = GetEdgeVertex(positions[0], positions[4], info.density_array[0], info.density_array[4]);
+        //         reference_list[8] = position + float3(half_cell_width, 0, half_cell_width);
+        //         reference_list[8].y = vertex_list[8].y;
+        // }
 
-        if (edge_table[cube_index] & (1 << 9)) {
-                vertex_list[9] = GetEdgeVertex(positions[1], positions[5], info.density_array[1], info.density_array[5]);
-                reference_list[9] = position + float3(half_cell_width, 0, half_cell_width);
-                reference_list[9].y = vertex_list[9].y;
-        }
+        // if (edge_table[cube_index] & (1 << 9)) {
+        //         vertex_list[9] = GetEdgeVertex(positions[1], positions[5], info.density_array[1], info.density_array[5]);
+        //         reference_list[9] = position + float3(half_cell_width, 0, half_cell_width);
+        //         reference_list[9].y = vertex_list[9].y;
+        // }
 
-        if (edge_table[cube_index] & (1 << 10)) {
-                vertex_list[10] = GetEdgeVertex(positions[2], positions[6], info.density_array[2], info.density_array[6]);
-                reference_list[10] = position + float3(half_cell_width, 0, half_cell_width);
-                reference_list[10].y = vertex_list[10].y;
-        }
+        // if (edge_table[cube_index] & (1 << 10)) {
+        //         vertex_list[10] = GetEdgeVertex(positions[2], positions[6], info.density_array[2], info.density_array[6]);
+        //         reference_list[10] = position + float3(half_cell_width, 0, half_cell_width);
+        //         reference_list[10].y = vertex_list[10].y;
+        // }
 
-        if (edge_table[cube_index] & (1 << 11)) {
-                vertex_list[11] = GetEdgeVertex(positions[3], positions[7], info.density_array[3], info.density_array[7]);
-                reference_list[11] = position + float3(half_cell_width, 0, half_cell_width);
-                reference_list[11].y = vertex_list[11].y;
-        }
+        // if (edge_table[cube_index] & (1 << 11)) {
+        //         vertex_list[11] = GetEdgeVertex(positions[3], positions[7], info.density_array[3], info.density_array[7]);
+        //         reference_list[11] = position + float3(half_cell_width, 0, half_cell_width);
+        //         reference_list[11].y = vertex_list[11].y;
+        // }
 
-        float3 summed_normals[12] = {};
-        uint normal_count[12] = {};
+        // float3 summed_normals[12] = {};
+        // uint normal_count[12] = {};
 
-        uint triangle_count = 0;
-        for (int i = 0; i < 15; i += 3) {
-                if (triangle_table[cube_index][i] == -1) break;
+        // uint triangle_count = 0;
+        // for (int i = 0; i < 15; i += 3) {
+        //         if (triangle_table[cube_index][i] == -1) break;
 
-                /*
-                NOTE: Hows this for a plan
-                - Loop all edges along x
-                        - Calc density and vertex position
-                        - Store in edge array. x_edges count = ((cell_count + 1) ^ 2) * (cell_count)
-                */
+        //         /*
+        //         NOTE: Hows this for a plan
+        //         - Loop all edges along x
+        //                 - Calc density and vertex position
+        //                 - Store in edge array. x_edges count = ((cell_count + 1) ^ 2) * (cell_count)
+        //         */
 
-                uint triangle_offset = triangle_offset_array[index];
+        //         uint triangle_offset = triangle_offset_array[index];
 
-                // NOTE: How can we just output just index of vertex and have vertex in another array... Loop edges not cells
-                vertices[triangle_offset + triangle_count + 0].position = vertex_list[triangle_table[cube_index][i + 0]];
-                vertices[triangle_offset + triangle_count + 1].position = vertex_list[triangle_table[cube_index][i + 1]];
-                vertices[triangle_offset + triangle_count + 2].position = vertex_list[triangle_table[cube_index][i + 2]];
+        //         // NOTE: How can we just output just index of vertex and have vertex in another array... Loop edges not cells
+        //         vertices[triangle_offset + triangle_count + 0].position = vertex_list[triangle_table[cube_index][i + 0]];
+        //         vertices[triangle_offset + triangle_count + 1].position = vertex_list[triangle_table[cube_index][i + 1]];
+        //         vertices[triangle_offset + triangle_count + 2].position = vertex_list[triangle_table[cube_index][i + 2]];
 
-                // ===== Calc Triangle Normal ===== //
+        //         // ===== Calc Triangle Normal ===== //
 
-                // ===== Add to Vertex Normal for this cell : Each vertex can neighbour 4 cells ===== //
-                // NOTE: This will lead to different normal calcs on the edges.
-                // Can do extra calc to get accurate normal? Either need to do marching cubes for cells + border, or accept non averaged normals on the borders of chunks.
-                // Need to set offset of unused values to end so we can just ignore. Dont care if we have race conditions as the values are not used
-                // But this means we dont need to do if checks.
+        //         // ===== Add to Vertex Normal for this cell : Each vertex can neighbour 4 cells ===== //
+        //         // NOTE: This will lead to different normal calcs on the edges.
+        //         // Can do extra calc to get accurate normal? Either need to do marching cubes for cells + border, or accept non averaged normals on the borders of chunks.
+        //         // Need to set offset of unused values to end so we can just ignore. Dont care if we have race conditions as the values are not used
+        //         // But this means we dont need to do if checks.
 
-                // Each cell has 12 edges a vertex can be on.
-                uint normals_array_index = (index * 12) + triangle_table[cube_index][i + 0];
+        //         // Each cell has 12 edges a vertex can be on.
+        //         uint normals_array_index = (index * 12) + triangle_table[cube_index][i + 0];
 
-                float3 e0 = vertex_list[triangle_table[cube_index][i + 1]] - vertex_list[triangle_table[cube_index][i + 0]]
-                float3 e1 = vertex_list[triangle_table[cube_index][i + 2]] - vertex_list[triangle_table[cube_index][i + 0]]
+        //         float3 e0 = vertex_list[triangle_table[cube_index][i + 1]] - vertex_list[triangle_table[cube_index][i + 0]]
+        //         float3 e1 = vertex_list[triangle_table[cube_index][i + 2]] - vertex_list[triangle_table[cube_index][i + 0]]
 
-                // Assuming CCW winding
-                summed_normals[triangle_table[cube_index][i + 0]] += cross(e0, e1);
-                normal_count[triangle_table[cube_index][i + 0]]++;
+        //         // Assuming CCW winding
+        //         summed_normals[triangle_table[cube_index][i + 0]] += cross(e0, e1);
+        //         normal_count[triangle_table[cube_index][i + 0]]++;
 
-                triangle_count++;
-        }
+        //         triangle_count++;
+        // }
 
-        // Output to actual array.
-        for (int i = 0; i < 12; i++) {
-                info.normals[(index * 12) + i] = summed_normals[i];
-                info.normal_count[(index * 12) + i] = normal_count[i];
-        }
+        // // Output to actual array.
+        // for (int i = 0; i < 12; i++) {
+        //         info.normals[(index * 12) + i] = summed_normals[i];
+        //         info.normal_count[(index * 12) + i] = normal_count[i];
+        // }
 }
 
 // This takes 25MB for 64 size chunk...
@@ -346,32 +346,32 @@ static const uint z_bit = 2;
 [shader("compute")]
 [numthreads(1, 8, 8)]
 void LoopXEdges(uniform PlanetCreationData info, uint3 dispatch_id : SV_DispatchThreadID) {
-        uint edge_count = info.cell_count + 1;
+        // uint edge_count = info.cell_count + 1;
 
-        uint edge_index = dispatch_id.y * info.cell_count + dispatch_id.z * edge_count * info.cell_count;
+        // uint edge_index = dispatch_id.y * info.cell_count + dispatch_id.z * edge_count * info.cell_count;
 
-        uint density_index = dispatch_id.x + dispatch_id.y * info.chunk_cells + dispatch.z * info.chunk_cells * info.chunk_cells;
-        float last_density = planet_creation_data.density_array[density_index];
-        density_index++;
+        // uint density_index = dispatch_id.x + dispatch_id.y * info.chunk_cells + dispatch.z * info.chunk_cells * info.chunk_cells;
+        // float last_density = planet_creation_data.density_array[density_index];
+        // density_index++;
 
-        uint x_sum = 0;
+        // uint x_sum = 0;
 
-        for (int i = 0; i < info.cell_count; i++) {
-                float density = planet_creation_data.density_array[density_index + i];
-                edges[edge_index + i].edge_case |= (last_density < 0) << 0;
-                edges[edge_index + i].edge_case |= (density < 0) << 1;
+        // for (int i = 0; i < info.cell_count; i++) {
+        //         float density = planet_creation_data.density_array[density_index + i];
+        //         edges[edge_index + i].edge_case |= (last_density < 0) << 0;
+        //         edges[edge_index + i].edge_case |= (density < 0) << 1;
 
-                if (last_density ^ density < 0.0f) {
-                        edges[edge_index + i].edge_case |= 1 << x_bit;
-                        x_sum++;
-                }
+        //         if (last_density ^ density < 0.0f) {
+        //                 edges[edge_index + i].edge_case |= 1 << x_bit;
+        //                 x_sum++;
+        //         }
 
-                edges[edge_index + i].start_index = x_sum;
+        //         edges[edge_index + i].start_index = x_sum;
 
-                last_density = density;
-        }
+        //         last_density = density;
+        // }
 
-        rows[dispatch_id.y + dispatch_id.z * info.cell_count].z_count = x_sum;
+        // rows[dispatch_id.y + dispatch_id.z * info.cell_count].z_count = x_sum;
 }
 
 
@@ -379,113 +379,113 @@ void LoopXEdges(uniform PlanetCreationData info, uint3 dispatch_id : SV_Dispatch
 [shader("compute")]
 [numthreads(8, 1, 8)]
 void LoopYEdges(uniform PlanetCreationData info, uint3 dispatch_id : SV_DispatchThreadID) {
-        uint edge_count = info.cell_count + 1;
+        // uint edge_count = info.cell_count + 1;
 
-        uint edge_index = dispatch_id.x + dispatch_id.y * info.cell_count + dispatch_id.z * edge_count * info.cell_count;
+        // uint edge_index = dispatch_id.x + dispatch_id.y * info.cell_count + dispatch_id.z * edge_count * info.cell_count;
 
-        // NEED TO FIND OUT HOW TO GET CORRECT ROW (JUST THE Y,Z i guess?)
-        uint x_sum = 0; // Add row.x_count for each row
-        uint y_sum = 0;
+        // // NEED TO FIND OUT HOW TO GET CORRECT ROW (JUST THE Y,Z i guess?)
+        // uint x_sum = 0; // Add row.x_count for each row
+        // uint y_sum = 0;
 
-        for (int i = 0; i < info.cell_count; i++) {
-                float density = planet_creation_data.density_array[density_index + i];
-                edges[edge_index + i].edge_case |= (last_density < 0) << 0;
-                edges[edge_index + i].edge_case |= (density < 0) << 1;
+        // for (int i = 0; i < info.cell_count; i++) {
+        //         float density = planet_creation_data.density_array[density_index + i];
+        //         edges[edge_index + i].edge_case |= (last_density < 0) << 0;
+        //         edges[edge_index + i].edge_case |= (density < 0) << 1;
 
-                if (last_density ^ density < 0.0f) {
-                        edges[edge_index + i].edge_case |= 1 << x_bit;
-                        x_sum++;
-                }
+        //         if (last_density ^ density < 0.0f) {
+        //                 edges[edge_index + i].edge_case |= 1 << x_bit;
+        //                 x_sum++;
+        //         }
 
-                edges[edge_index + i].start_index = x_sum;
+        //         edges[edge_index + i].start_index = x_sum;
 
-                last_density = density;
-        }
+        //         last_density = density;
+        // }
 
-        rows[dispatch_id.y + dispatch_id.z * info.cell_count].z_count = x_sum;
+        // rows[dispatch_id.y + dispatch_id.z * info.cell_count].z_count = x_sum;
 }
 
 [shader("compute")]
 [numthreads(1, 8, 8)]
 void GetTriangleCount(uniform PlanetCreationData info, uint3 dispatch_id : SV_DispatchThreadID) {
-        uint y_offset = info.cell_count;
-        uint z_offset = edge_count * info.cell_count;
+        // uint y_offset = info.cell_count;
+        // uint z_offset = edge_count * info.cell_count;
 
-        uint e1_index = dispatch_id.y * y_offset + dispatch_id.z * z_offset;
-        uint e2_index = e1_index + z_offset; // Flip?
-        uint e3_index = e1_index + y_offset;
-        uint e4_index = e2_index + y_offset;
+        // uint e1_index = dispatch_id.y * y_offset + dispatch_id.z * z_offset;
+        // uint e2_index = e1_index + z_offset; // Flip?
+        // uint e3_index = e1_index + y_offset;
+        // uint e4_index = e2_index + y_offset;
 
-        for (int i = 0; i < info.cell_count; i++) {
-                uint edge_case = 0;
+        // for (int i = 0; i < info.cell_count; i++) {
+        //         uint edge_case = 0;
 
-                edge_case |= edges[e1_index + i].edge_case << 0;
-                edge_case |= (edges[e2_index + i].edge_case ^ 3) << 2; // Flip? Edge table we use has e2 going opposite direction to e1
-                edge_case |= edges[e3_index + i].edge_case << 4;
-                edge_case |= (edges[e4_index + i].edge_case ^ 3) << 6; // Flip?
+        //         edge_case |= edges[e1_index + i].edge_case << 0;
+        //         edge_case |= (edges[e2_index + i].edge_case ^ 3) << 2; // Flip? Edge table we use has e2 going opposite direction to e1
+        //         edge_case |= edges[e3_index + i].edge_case << 4;
+        //         edge_case |= (edges[e4_index + i].edge_case ^ 3) << 6; // Flip?
 
-                edge_case &= 255; // Remove all excess bits. As we use edge_case to store other information.
+        //         edge_case &= 255; // Remove all excess bits. As we use edge_case to store other information.
 
-                // edge_case is this cells MC index!
+        //         // edge_case is this cells MC index!
 
-                // Count triangles
+        //         // Count triangles
 
-                // Check y and z intersects - Only for edge at cell x,y,z
-                // How do we check for y and z intersects at the y and z boundry of the cell?
-        }
+        //         // Check y and z intersects - Only for edge at cell x,y,z
+        //         // How do we check for y and z intersects at the y and z boundry of the cell?
+        // }
 
-        // Check last y, z and need to add to total - These are not stored anywhere but we can get from previous edge.
+        // // Check last y, z and need to add to total - These are not stored anywhere but we can get from previous edge.
 }
 
 [shader("compute")]
 [numthreads(8, 1, 8)]
 void LoopZEdges(uniform PlanetCreationData info, uint3 dispatch_id : SV_DispatchThreadID) {
-        // Store in order for optimal access not consistant order! This is zxy
-        uint edge_count = (info.cell_count + 1);
-        uint edge_index_start = dispatch_id.y * edge_count * edge_count + dispatch_id.x * edge_count;
+        // // Store in order for optimal access not consistant order! This is zxy
+        // uint edge_count = (info.cell_count + 1);
+        // uint edge_index_start = dispatch_id.y * edge_count * edge_count + dispatch_id.x * edge_count;
 
-        // ===== Get Density ===== //
-        uint density_index = dispatch_id.x + dispatch_id.y * info.chunk_cells + dispatch_id.z * info.chunk_cells * info.chunk_cells;
+        // // ===== Get Density ===== //
+        // uint density_index = dispatch_id.x + dispatch_id.y * info.chunk_cells + dispatch_id.z * info.chunk_cells * info.chunk_cells;
 
-        last_density = planet_creation_data.density_array[density_index];
+        // last_density = planet_creation_data.density_array[density_index];
 
-        uint vertex_count = 0;
+        // uint vertex_count = 0;
 
-        uint y_edge_index = dispatch_id.z * edge_count * edge_count + dispatch_id.x * edge_count + dispatch_id.y;
-        uint y_last_edge_index = dispatch_id.z * edge_count * edge_count + dispatch_id.x * edge_count + info.cell_count;
-        uint y_sum = edges[1][y_last_edge_index];
+        // uint y_edge_index = dispatch_id.z * edge_count * edge_count + dispatch_id.x * edge_count + dispatch_id.y;
+        // uint y_last_edge_index = dispatch_id.z * edge_count * edge_count + dispatch_id.x * edge_count + info.cell_count;
+        // uint y_sum = edges[1][y_last_edge_index];
 
-        uint x_sum = edges[0][info.cell_count * edge_count * edge_count];
+        // uint x_sum = edges[0][info.cell_count * edge_count * edge_count];
 
-        for (uint z = 1; z < edge_count; z++) {
-                // We look at edge before current point
-                uint index = edge_index_start + (z - 1);
+        // for (uint z = 1; z < edge_count; z++) {
+        //         // We look at edge before current point
+        //         uint index = edge_index_start + (z - 1);
 
-                density_index += info.chunk_cells * info.chunk_cells;
-                float density = planet_creation_data.density_array[density_index];
+        //         density_index += info.chunk_cells * info.chunk_cells;
+        //         float density = planet_creation_data.density_array[density_index];
 
-                if (last_density ^ density < 0.0f) {
-                        vertex_count++;
-                }
+        //         if (last_density ^ density < 0.0f) {
+        //                 vertex_count++;
+        //         }
 
-                edges[2][index].index = vertex_count;
+        //         edges[2][index].index = vertex_count;
 
-                last_density = density;
+        //         last_density = density;
 
-                // ===== Calc X Indices ===== //
+        //         // ===== Calc X Indices ===== //
 
-                // I hate this, is there a way to avoid this?
-                if (dispatch_id.x == info.cell_count) continue;
+        //         // I hate this, is there a way to avoid this?
+        //         if (dispatch_id.x == info.cell_count) continue;
 
-                x_edge_index += info.cell_count;
+        //         x_edge_index += info.cell_count;
 
-                edges[0][x_edge_index] = x_sum + edges[0][x_edge_index];
+        //         edges[0][x_edge_index] = x_sum + edges[0][x_edge_index];
 
-                x_last_edge_index += info.cell_count;
-                x_sum += edges[0][x_last_edge_index];
-        }
+        //         x_last_edge_index += info.cell_count;
+        //         x_sum += edges[0][x_last_edge_index];
+        // }
 
-        // Set last value so that we can store sums without overwritting
-        // Add x total so we know what the offset for y vertices is.
-        edges[0][edge_index_start + info.cell_count] = vertex_count + x_sum + edges[0][x_edge_index];
+        // // Set last value so that we can store sums without overwritting
+        // // Add x total so we know what the offset for y vertices is.
+        // edges[0][edge_index_start + info.cell_count] = vertex_count + x_sum + edges[0][x_edge_index];
 }
