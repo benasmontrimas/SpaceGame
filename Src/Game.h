@@ -8,7 +8,9 @@
 
 #include <vector>
 
+#include "InputSystem.h"
 #include "Model.h"
+#include "Planet.h"
 #include "Resources.h"
 
 struct SDL_Window;
@@ -27,31 +29,15 @@ struct ShaderDrawData {
         Mat4 model;
 };
 
-struct PlanetCreationInfo {
-        VkDeviceAddress density_address;         // 8
-        VkDeviceAddress triangle_offset_address; // 16
-        VkDeviceAddress triangle_address;        // 24
+// NOTE: Can I split out core stuff into a GameContext struct so that I can pass that around to systems and have gameplay in Game.
 
-        u32 chunk_cells; // 28
-        u32 chunk_dims;  // 32
-
-        Vec3 positions; // 44
-
-        u32 seed; // 48
-
-        VkDeviceAddress edge_table_address;     // 56
-        VkDeviceAddress triangle_table_address; // 64
-};
-
-struct Game {
+struct GameContext {
         void Init();
         void InitComputePipeline();
 
         void Shutdown();
 
-        void Run();
-
-        void DispatchPlanetGen();
+        void Render();
 
         // ====== //
 
@@ -121,17 +107,27 @@ struct Game {
 
         TransferEngine transfer_engine;
 
-        // ===== //
-
-        Vec3           camera_position{ 0, 0, -10.0f };
-        ShaderDrawData shader_draw_data;
-
         u32 frame_index{};
         u32 image_index{};
 
+        ShaderDrawData shader_draw_data;
+
         bool swapchain_needs_resizing{ false };
 
+        // ===== REPLACE BELOW ===== //
+        Vec3  camera_position{ 0, 0, -10.0f };
+        Model model;
+};
+
+struct Game {
+        void Init();
+        void Shutdown();
+        void Run();
+
+        GameContext game_context;
+        InputSystem input_system;
 
         GPUBuffer planet_density_buffer;
-        Model     model;
+
+        Planet planet;
 };

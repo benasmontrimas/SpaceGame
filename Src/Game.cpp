@@ -1,5 +1,6 @@
 #include "Game.h"
 #include "Base.h"
+#include "Planet.h"
 #include "Resources.h"
 
 #define VMA_IMPLEMENTATION
@@ -17,7 +18,7 @@
 #include <print>
 #include <vector>
 
-void Game::InitComputePipeline() {
+void GameContext::InitComputePipeline() {
         VkResult res;
 
         // ===== Create Compute Pipeline Layout ===== //
@@ -41,6 +42,8 @@ void Game::InitComputePipeline() {
                 std::println("Failed creating compute pipeline layout");
                 exit(res);
         }
+
+        // Factor out shader loading into a function which handles all this for me.
 
         // ===== Compute Shaders ===== //
         Slang::ComPtr<slang::IBlob>   diagnostics;
@@ -129,25 +132,9 @@ void Game::InitComputePipeline() {
                 std::println("Failed creating fence");
                 exit(res);
         }
-
-        // ===== TEMP ===== //
-
-        VmaAllocationCreateFlags allocation_flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
-                                                    VMA_ALLOCATION_CREATE_HOST_ACCESS_ALLOW_TRANSFER_INSTEAD_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT;
-
-        planet_density_buffer = CreateGPUBuffer(vulkan_device, vulkan_allocator, sizeof(float) * 33 * 33 * 33, transfer_queue_family,
-                                                VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-                                                allocation_flags);
-
-        VkBufferDeviceAddressInfo planet_buffer_address_info{
-                .sType  = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO,
-                .buffer = planet_density_buffer.buffer,
-        };
-
-        planet_density_buffer.device_address = vkGetBufferDeviceAddress(vulkan_device, &planet_buffer_address_info);
 }
 
-void Game::Init() {
+void GameContext::Init() {
         VkResult res;
 
         // ===== Initialise Libraries =====
@@ -538,27 +525,6 @@ void Game::Init() {
 
         // NOTE: Why are these not just in 1 buffer? this way is easier, but also means were doing more allocations?
         for (u32 i = 0; i < max_frames_in_flight; i++) {
-                // VkBufferCreateInfo uniform_buffer_info{
-                //         .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
-                //         .size  = sizeof(ShaderDrawData),
-                //         .usage = VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
-                // };
-
-                // VmaAllocationCreateInfo uniform_buffer_allocation_info{
-                //         .flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_HOST_ACCESS_ALLOW_TRANSFER_INSTEAD_BIT |
-                //                  VMA_ALLOCATION_CREATE_MAPPED_BIT,
-                //         .usage = VMA_MEMORY_USAGE_AUTO,
-                // };
-
-                // res = vmaCreateBuffer(vulkan_allocator, &uniform_buffer_info, &uniform_buffer_allocation_info, &draw_data[i].buffer,
-                // &draw_data[i].allocation,
-                //                       &draw_data[i].allocation_info);
-
-                // if (res != VK_SUCCESS) {
-                //         std::println("Failed creating uniform buffer");
-                //         exit(res);
-                // }
-
                 VmaAllocationCreateFlags allocation_flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
                                                             VMA_ALLOCATION_CREATE_HOST_ACCESS_ALLOW_TRANSFER_INSTEAD_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT;
 
@@ -909,7 +875,7 @@ void Game::Init() {
         transfer_engine.Init(vulkan_device, transfer_queue_family, vulkan_allocator);
 }
 
-void Game::Shutdown() {
+void GameContext::Shutdown() {
         vkDeviceWaitIdle(vulkan_device);
 
         // TODO: move this
@@ -967,15 +933,51 @@ void Game::Shutdown() {
         SDL_Quit();
 }
 
-void Game::DispatchPlanetGen() {
+void GameContext::Render() {
         VkResult res;
-
-        // ===== Record Commands ===== //
-
-        res = vkResetCommandBuffer(compute_command_buffer, 0);
+        res = vkWaitForFences(vulkan_device, 1, &fences[frame_index], true, u64_max);
 
         if (res != VK_SUCCESS) {
-                std::println("Failed Reseting compute command buffer");
+                std::println("Failed waiting on fence for rendering: {}", (i32)res);
+                exit(res);
+        }
+
+        res = vkResetFences(vulkan_device, 1, &fences[frame_index]);
+
+        if (res != VK_SUCCESS) {
+                std::println("Failed resetting fences");
+                exit(res);
+        }
+
+        // TODO: Check result
+        res = vkAcquireNextImageKHR(vulkan_device, vulkan_swapchain, u64_max, present_semaphores[frame_index], VK_NULL_HANDLE, &image_index);
+
+        if (res != VK_SUCCESS) {
+                if (res != VK_SUBOPTIMAL_KHR) {
+                        std::println("Failed acquiring swapchain images");
+                        exit(res);
+                }
+
+                swapchain_needs_resizing = true;
+        }
+
+
+        // ===== Shader Data =====
+
+        shader_draw_data.projection = glm::perspective(glm::radians(45.0f), (float)window.width / (float)window.height, 0.1f, 32.0f);
+        shader_draw_data.view       = glm::translate(Mat4(1.0f), camera_position);
+
+        shader_draw_data.model = glm::translate(Mat4(1.0f), Vec3{ 0, 0, 0 });
+        shader_draw_data.model = glm::scale(shader_draw_data.model, { 0.1f, 0.1f, 0.1f });
+
+        memcpy(draw_data[frame_index].allocation_info.pMappedData, &shader_draw_data, sizeof(ShaderDrawData));
+
+        VkCommandBuffer command_buffer = graphics_command_buffers[frame_index];
+
+        res = vkResetCommandBuffer(command_buffer, 0);
+
+        if (res != VK_SUCCESS) {
+                std::println("Failed resetting command buffer");
                 exit(res);
         }
 
@@ -984,115 +986,213 @@ void Game::DispatchPlanetGen() {
                 .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
         };
 
-        res = vkBeginCommandBuffer(compute_command_buffer, &command_buffer_begin_info);
+        res = vkBeginCommandBuffer(command_buffer, &command_buffer_begin_info);
 
         if (res != VK_SUCCESS) {
-                std::println("Failed begining compute command buffer for rendering");
+                std::println("Failed begining command buffer for rendering");
                 exit(res);
         }
 
-        // NOTE: Only doing this because we write to the buffer for debug.
-        // Transition back to Compute Queue
-
-        BufferOwnershipInfo acquire_ownership_info{
-                .command_buffer   = compute_command_buffer,
-                .buffer           = planet_density_buffer,
-                .old_queue_family = transfer_engine.transfer_queue_family,
-                .new_queue_family = compute_queue_family,
-                .stage_mask       = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
-                .access_mask      = VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT,
+        std::array<VkImageMemoryBarrier2, 2> output_barriers{
+                VkImageMemoryBarrier2{
+                        .sType         = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
+                        .srcStageMask  = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+                        .srcAccessMask = 0,
+                        .dstStageMask  = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+                        .dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+                        .oldLayout     = VK_IMAGE_LAYOUT_UNDEFINED,
+                        .newLayout     = VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL,
+                        .image         = swapchain_images[image_index],
+                        .subresourceRange{
+                                .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+                                .levelCount = 1,
+                                .layerCount = 1,
+                        },
+                },
+                VkImageMemoryBarrier2{
+                        .sType         = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
+                        .srcStageMask  = VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT,
+                        .srcAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
+                        .dstStageMask  = VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT,
+                        .dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
+                        .oldLayout     = VK_IMAGE_LAYOUT_UNDEFINED,
+                        .newLayout     = VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL,
+                        .image         = depth_image,
+                        .subresourceRange{
+                                .aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT,
+                                .levelCount = 1,
+                                .layerCount = 1,
+                        },
+                },
         };
 
-        CmdAcquireBufferOwnership(acquire_ownership_info);
-
-        vkCmdBindPipeline(compute_command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute_pipeline);
-
-        constexpr u32 shader_thread_size = 4;
-
-        PlanetCreationInfo planet_info{
-                .density_address = planet_density_buffer.device_address,
-
-                .chunk_cells = 32,
-                .chunk_dims  = 32,
-
-                .positions = { 0, 0, 0 },
-
-                .seed = 102,
+        VkDependencyInfo barrier_dependency_info{
+                .sType                   = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
+                .imageMemoryBarrierCount = 2,
+                .pImageMemoryBarriers    = output_barriers.data(),
         };
 
-        vkCmdPushConstants(compute_command_buffer, compute_pipeline_layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(PlanetCreationInfo), &planet_info);
+        vkCmdPipelineBarrier2(command_buffer, &barrier_dependency_info);
 
-        u32 dispatch_count = (33 + (shader_thread_size - 1)) / shader_thread_size;
 
-        std::println("Dispatching {} compute shaders, should be {}", dispatch_count, 32 / 4);
-
-        vkCmdDispatch(compute_command_buffer, dispatch_count, dispatch_count, dispatch_count);
-
-        // NOTE: Just to read...
-
-        BufferOwnershipInfo release_ownership_info{
-                .command_buffer   = compute_command_buffer,
-                .buffer           = planet_density_buffer,
-                .old_queue_family = compute_queue_family,
-                .new_queue_family = transfer_engine.transfer_queue_family,
-                .stage_mask       = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
-                .access_mask      = VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT,
+        VkRenderingAttachmentInfo color_attachment_info{
+                .sType       = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
+                .imageView   = swapchain_image_views[image_index],
+                .imageLayout = VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL,
+                .loadOp      = VK_ATTACHMENT_LOAD_OP_CLEAR,
+                .storeOp     = VK_ATTACHMENT_STORE_OP_STORE,
+                .clearValue{
+                        .color = { .float32{ 0.7f, 0.1f, 0.9f, 1.0f } },
+                },
         };
 
-        CmdReleaseBufferOwnership(release_ownership_info);
+        VkRenderingAttachmentInfo depth_attachment_info{
+                .sType       = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
+                .imageView   = depth_image_view,
+                .imageLayout = VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL,
+                .loadOp      = VK_ATTACHMENT_LOAD_OP_CLEAR,
+                .storeOp     = VK_ATTACHMENT_STORE_OP_DONT_CARE,
+                .clearValue{
+                        .depthStencil{
+                                .depth   = 1.0f,
+                                .stencil = 0,
+                        },
+                },
+        };
 
-        res = vkEndCommandBuffer(compute_command_buffer);
+        VkRenderingInfo rendering_info{
+                .sType = VK_STRUCTURE_TYPE_RENDERING_INFO,
+                .renderArea{
+                        .extent{
+                                .width  = (u32)window.width,
+                                .height = (u32)window.height,
+                        },
+                },
+                .layerCount           = 1,
+                .colorAttachmentCount = 1,
+                .pColorAttachments    = &color_attachment_info,
+                .pDepthAttachment     = &depth_attachment_info,
+        };
+
+        vkCmdBeginRendering(command_buffer, &rendering_info);
+
+        VkViewport viewport{
+                .width    = (float)window.width,
+                .height   = (float)window.height,
+                .minDepth = 0.0f,
+                .maxDepth = 1.0f,
+        };
+
+        vkCmdSetViewport(command_buffer, 0, 1, &viewport);
+
+        VkRect2D scissor{
+                .extent{
+                        .width  = (u32)window.width,
+                        .height = (u32)window.height,
+                },
+        };
+
+        vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
+        vkCmdSetScissor(command_buffer, 0, 1, &scissor);
+
+        vkCmdBindDescriptorSets(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_layout, 0, 1, &descriptor_set, 0, nullptr);
+
+        VkDeviceSize vertex_offset{ 0 };
+        vkCmdBindVertexBuffers(command_buffer, 0, 1, &model.meshes[0].buffer, &vertex_offset);
+
+        vkCmdBindIndexBuffer(command_buffer, model.meshes[0].buffer, model.meshes[0].vertices_size, VK_INDEX_TYPE_UINT32);
+
+        vkCmdPushConstants(command_buffer, pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(VkDeviceAddress), &draw_data[frame_index].device_address);
+
+        vkCmdDrawIndexed(command_buffer, (u32)model.meshes[0].index_count, 1, 0, 0, 0);
+
+        vkCmdEndRendering(command_buffer);
+
+        VkImageMemoryBarrier2 present_barrier{
+                .sType         = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
+                .srcStageMask  = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+                .srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+                .dstStageMask  = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+                .dstAccessMask = 0,
+                .oldLayout     = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                .newLayout     = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+                .image         = swapchain_images[image_index],
+                .subresourceRange{
+                        .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+                        .levelCount = 1,
+                        .layerCount = 1,
+                },
+        };
+
+        VkDependencyInfo barrier_present_dependency_info{
+                .sType                   = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
+                .imageMemoryBarrierCount = 1,
+                .pImageMemoryBarriers    = &present_barrier,
+        };
+
+        vkCmdPipelineBarrier2(command_buffer, &barrier_present_dependency_info);
+        res = vkEndCommandBuffer(command_buffer);
 
         if (res != VK_SUCCESS) {
-                std::println("Failed to end compute command buffer");
+                std::println("Failed ending command buffer");
                 exit(res);
         }
 
-        // ===== Submit Commands ===== //
+        // ===== Submit =====
 
-        std::vector<VkSemaphore> wait_semaphores;
-        wait_semaphores.push_back(planet_density_buffer.transfer_semaphore);
-
-        std::vector<VkSemaphore> signal_semaphores;
-        signal_semaphores.push_back(planet_density_buffer.ownership_semaphore);
-
-        VkPipelineStageFlags flags = VK_PIPELINE_STAGE_TRANSFER_BIT;
+        VkPipelineStageFlags wait_stages = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
 
         VkSubmitInfo submit_info{
                 .sType                = VK_STRUCTURE_TYPE_SUBMIT_INFO,
-                .waitSemaphoreCount   = (u32)wait_semaphores.size(),
-                .pWaitSemaphores      = wait_semaphores.data(),
-                .pWaitDstStageMask    = &flags,
+                .waitSemaphoreCount   = 1,
+                .pWaitSemaphores      = &present_semaphores[frame_index],
+                .pWaitDstStageMask    = &wait_stages,
                 .commandBufferCount   = 1,
-                .pCommandBuffers      = &compute_command_buffer,
-                .signalSemaphoreCount = (u32)signal_semaphores.size(),
-                .pSignalSemaphores    = signal_semaphores.data(),
+                .pCommandBuffers      = &command_buffer,
+                .signalSemaphoreCount = 1,
+                .pSignalSemaphores    = &render_semaphores[image_index],
         };
 
-        res = vkQueueSubmit(compute_queue, 1, &submit_info, compute_fences[0]);
+        res = vkQueueSubmit(graphics_queue, 1, &submit_info, fences[frame_index]);
 
         if (res != VK_SUCCESS) {
-                std::println("Failed to submit compute commands");
+                std::println("Failed to submit queue");
                 exit(res);
         }
 
-        // ===== Wait to Finish ===== //
+        frame_index = (frame_index + 1) % max_frames_in_flight;
 
-        std::println("Waiting On Fence");
-        res = vkWaitForFences(vulkan_device, 1, &compute_fences[0], true, u64_max);
+        // ===== Present =====
+
+        VkPresentInfoKHR present_info{
+                .sType              = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
+                .waitSemaphoreCount = 1,
+                .pWaitSemaphores    = &render_semaphores[image_index],
+                .swapchainCount     = 1,
+                .pSwapchains        = &vulkan_swapchain,
+                .pImageIndices      = &image_index,
+        };
+
+        res = vkQueuePresentKHR(graphics_queue, &present_info);
 
         if (res != VK_SUCCESS) {
-                std::println("Failed waiting on fence for compute");
-                exit(res);
+                if (res == VK_SUBOPTIMAL_KHR) {
+                        std::println("Warning: should resize");
+                } else {
+                        std::println("Failed presenting: {}", (int)res);
+                        exit(res);
+                }
         }
+}
 
-        res = vkResetFences(vulkan_device, 1, &compute_fences[0]);
+// ===== GAME ===== //
 
-        if (res != VK_SUCCESS) {
-                std::println("Failed resetting fences");
-                exit(res);
-        }
-        std::println("Waiting on Fence Finished");
+void Game::Init() {
+        game_context.Init();
+}
+
+void Game::Shutdown() {
+        game_context.Shutdown();
 }
 
 void Game::Run() {
@@ -1101,344 +1201,73 @@ void Game::Run() {
         u64  last_time{ SDL_GetTicks() };
         bool running = true;
 
-        float* density_data = (float*)malloc(sizeof(float) * 33 * 33 * 33);
-
-        for (u32 i = 0; i < 33 * 33 * 33; i++) {
-                density_data[i] = 0;
-        }
-
-        GPUBufferWriteInfo write_info{
-                .src    = (u8*)&density_data[0],
-                .offset = 0,
-                .size   = sizeof(float) * 33 * 33 * 33,
-                .dst    = planet_density_buffer,
-
-                .dst_queue_family = compute_queue_family,
-        };
-
-        // Need to release and acquire around this.
-        // What happens when we acquire a resource that has not been released, but also isnt owned by anyone?
-        TransferJobID write_id = transfer_engine.QueueGPUBufferWrite(write_info);
-
-        // NOTE: Can not stall on check as if update is never called, we will never queue the job!
-        while (!transfer_engine.Check(write_id)) {
-                transfer_engine.Update();
-        }
-
-        free(density_data);
-
-        DispatchPlanetGen();
-
-        float* vals = (float*)malloc(sizeof(float) * 33 * 33 * 33);
-
-        GPUBufferReadInfo read_job{
-                .src              = planet_density_buffer,
-                .offset           = 0,
-                .size             = sizeof(float) * 33 * 33 * 33,
-                .dst              = (u8*)vals,
-                .src_queue_family = compute_queue_family,
-        };
-
-        TransferJobID read_id = transfer_engine.QueueGPUBufferRead(read_job);
-
-        while (!transfer_engine.Check(read_id)) {
-                transfer_engine.Update();
-        }
+        // float* density_data = (float*)malloc(sizeof(float) * 33 * 33 * 33);
 
         // for (u32 i = 0; i < 33 * 33 * 33; i++) {
-        //         // if (i != (u32)vals[i])
-        //         std::println("{} : {}", i, vals[i]);
+        //         density_data[i] = 0;
         // }
 
-        free(vals);
+        // GPUBufferWriteInfo write_info{
+        //         .src    = (u8*)&density_data[0],
+        //         .offset = 0,
+        //         .size   = sizeof(float) * 33 * 33 * 33,
+        //         .dst    = planet_density_buffer,
 
-        // ===== Free Resources ===== //
-        // Why here?
+        //         .dst_queue_family = compute_queue_family,
+        // };
 
-        // vmaDestroyBuffer(vulkan_allocator, planet_density_buffer.buffer, planet_density_buffer.allocation);
-        DestroyGPUBuffer(vulkan_device, planet_density_buffer, vulkan_allocator);
+        // // Need to release and acquire around this.
+        // // What happens when we acquire a resource that has not been released, but also isnt owned by anyone?
+        // TransferJobID write_id = transfer_engine.QueueGPUBufferWrite(write_info);
+
+        // // NOTE: Can not stall on check as if update is never called, we will never queue the job!
+        // while (!transfer_engine.Check(write_id)) {
+        //         transfer_engine.Update();
+        // }
+
+        // free(density_data);
+
+        // DispatchPlanetGen();
+
+        // float* vals = (float*)malloc(sizeof(float) * 33 * 33 * 33);
+
+        // GPUBufferReadInfo read_job{
+        //         .src              = planet_density_buffer,
+        //         .offset           = 0,
+        //         .size             = sizeof(float) * 33 * 33 * 33,
+        //         .dst              = (u8*)vals,
+        //         .src_queue_family = compute_queue_family,
+        // };
+
+        // TransferJobID read_id = transfer_engine.QueueGPUBufferRead(read_job);
+
+        // while (!transfer_engine.Check(read_id)) {
+        //         transfer_engine.Update();
+        // }
+
+        // // for (u32 i = 0; i < 33 * 33 * 33; i++) {
+        // //         // if (i != (u32)vals[i])
+        // //         std::println("{} : {}", i, vals[i]);
+        // // }
+
+        // free(vals);
+
+        // // ===== Free Resources ===== //
+        // // Why here?
+
+        // // vmaDestroyBuffer(vulkan_allocator, planet_density_buffer.buffer, planet_density_buffer.allocation);
+        // DestroyGPUBuffer(vulkan_device, planet_density_buffer, vulkan_allocator);
 
         while (running) {
-                // ===== Wait For GPU =====
+                // ===== Render =====
 
-                res = vkWaitForFences(vulkan_device, 1, &fences[frame_index], true, u64_max);
-
-                if (res != VK_SUCCESS) {
-                        std::println("Failed waiting on fence for rendering: {}", (i32)res);
-                        exit(res);
-                }
-
-                res = vkResetFences(vulkan_device, 1, &fences[frame_index]);
-
-                if (res != VK_SUCCESS) {
-                        std::println("Failed resetting fences");
-                        exit(res);
-                }
-
-                // TODO: Check result
-                res = vkAcquireNextImageKHR(vulkan_device, vulkan_swapchain, u64_max, present_semaphores[frame_index], VK_NULL_HANDLE, &image_index);
-
-                if (res != VK_SUCCESS) {
-                        if (res != VK_SUBOPTIMAL_KHR) {
-                                std::println("Failed acquiring swapchain images");
-                                exit(res);
-                        }
-
-                        swapchain_needs_resizing = true;
-                }
-
-
-                // ===== Shader Data =====
-
-                shader_draw_data.projection = glm::perspective(glm::radians(45.0f), (float)window.width / (float)window.height, 0.1f, 32.0f);
-                shader_draw_data.view       = glm::translate(Mat4(1.0f), camera_position);
-
-                shader_draw_data.model = glm::translate(Mat4(1.0f), Vec3{ 0, 0, 0 });
-                shader_draw_data.model = glm::scale(shader_draw_data.model, { 0.1f, 0.1f, 0.1f });
-
-                memcpy(draw_data[frame_index].allocation_info.pMappedData, &shader_draw_data, sizeof(ShaderDrawData));
-
-                VkCommandBuffer command_buffer = graphics_command_buffers[frame_index];
-
-                res = vkResetCommandBuffer(command_buffer, 0);
-
-                if (res != VK_SUCCESS) {
-                        std::println("Failed resetting command buffer");
-                        exit(res);
-                }
-
-                VkCommandBufferBeginInfo command_buffer_begin_info{
-                        .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
-                        .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
-                };
-
-                res = vkBeginCommandBuffer(command_buffer, &command_buffer_begin_info);
-
-                if (res != VK_SUCCESS) {
-                        std::println("Failed begining command buffer for rendering");
-                        exit(res);
-                }
-
-                std::array<VkImageMemoryBarrier2, 2> output_barriers{
-                        VkImageMemoryBarrier2{
-                                .sType         = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
-                                .srcStageMask  = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
-                                .srcAccessMask = 0,
-                                .dstStageMask  = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
-                                .dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
-                                .oldLayout     = VK_IMAGE_LAYOUT_UNDEFINED,
-                                .newLayout     = VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL,
-                                .image         = swapchain_images[image_index],
-                                .subresourceRange{
-                                        .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-                                        .levelCount = 1,
-                                        .layerCount = 1,
-                                },
-                        },
-                        VkImageMemoryBarrier2{
-                                .sType         = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
-                                .srcStageMask  = VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT,
-                                .srcAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
-                                .dstStageMask  = VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT,
-                                .dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
-                                .oldLayout     = VK_IMAGE_LAYOUT_UNDEFINED,
-                                .newLayout     = VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL,
-                                .image         = depth_image,
-                                .subresourceRange{
-                                        .aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT,
-                                        .levelCount = 1,
-                                        .layerCount = 1,
-                                },
-                        },
-                };
-
-                VkDependencyInfo barrier_dependency_info{
-                        .sType                   = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
-                        .imageMemoryBarrierCount = 2,
-                        .pImageMemoryBarriers    = output_barriers.data(),
-                };
-
-                vkCmdPipelineBarrier2(command_buffer, &barrier_dependency_info);
-
-
-                VkRenderingAttachmentInfo color_attachment_info{
-                        .sType       = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
-                        .imageView   = swapchain_image_views[image_index],
-                        .imageLayout = VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL,
-                        .loadOp      = VK_ATTACHMENT_LOAD_OP_CLEAR,
-                        .storeOp     = VK_ATTACHMENT_STORE_OP_STORE,
-                        .clearValue{
-                                .color = { .float32{ 0.7f, 0.1f, 0.9f, 1.0f } },
-                        },
-                };
-
-                VkRenderingAttachmentInfo depth_attachment_info{
-                        .sType       = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
-                        .imageView   = depth_image_view,
-                        .imageLayout = VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL,
-                        .loadOp      = VK_ATTACHMENT_LOAD_OP_CLEAR,
-                        .storeOp     = VK_ATTACHMENT_STORE_OP_DONT_CARE,
-                        .clearValue{
-                                .depthStencil{
-                                        .depth   = 1.0f,
-                                        .stencil = 0,
-                                },
-                        },
-                };
-
-                VkRenderingInfo rendering_info{
-                        .sType = VK_STRUCTURE_TYPE_RENDERING_INFO,
-                        .renderArea{
-                                .extent{
-                                        .width  = (u32)window.width,
-                                        .height = (u32)window.height,
-                                },
-                        },
-                        .layerCount           = 1,
-                        .colorAttachmentCount = 1,
-                        .pColorAttachments    = &color_attachment_info,
-                        .pDepthAttachment     = &depth_attachment_info,
-                };
-
-                vkCmdBeginRendering(command_buffer, &rendering_info);
-
-                VkViewport viewport{
-                        .width    = (float)window.width,
-                        .height   = (float)window.height,
-                        .minDepth = 0.0f,
-                        .maxDepth = 1.0f,
-                };
-
-                vkCmdSetViewport(command_buffer, 0, 1, &viewport);
-
-                VkRect2D scissor{
-                        .extent{
-                                .width  = (u32)window.width,
-                                .height = (u32)window.height,
-                        },
-                };
-
-                vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
-                vkCmdSetScissor(command_buffer, 0, 1, &scissor);
-
-                vkCmdBindDescriptorSets(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_layout, 0, 1, &descriptor_set, 0, nullptr);
-
-                VkDeviceSize vertex_offset{ 0 };
-                vkCmdBindVertexBuffers(command_buffer, 0, 1, &model.meshes[0].buffer, &vertex_offset);
-
-                vkCmdBindIndexBuffer(command_buffer, model.meshes[0].buffer, model.meshes[0].vertices_size, VK_INDEX_TYPE_UINT32);
-
-                vkCmdPushConstants(command_buffer, pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(VkDeviceAddress),
-                                   &draw_data[frame_index].device_address);
-
-                vkCmdDrawIndexed(command_buffer, (u32)model.meshes[0].index_count, 1, 0, 0, 0);
-
-                vkCmdEndRendering(command_buffer);
-
-                VkImageMemoryBarrier2 present_barrier{
-                        .sType         = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
-                        .srcStageMask  = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
-                        .srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
-                        .dstStageMask  = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
-                        .dstAccessMask = 0,
-                        .oldLayout     = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-                        .newLayout     = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
-                        .image         = swapchain_images[image_index],
-                        .subresourceRange{
-                                .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-                                .levelCount = 1,
-                                .layerCount = 1,
-                        },
-                };
-
-                VkDependencyInfo barrier_present_dependency_info{
-                        .sType                   = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
-                        .imageMemoryBarrierCount = 1,
-                        .pImageMemoryBarriers    = &present_barrier,
-                };
-
-                vkCmdPipelineBarrier2(command_buffer, &barrier_present_dependency_info);
-                res = vkEndCommandBuffer(command_buffer);
-
-                if (res != VK_SUCCESS) {
-                        std::println("Failed ending command buffer");
-                        exit(res);
-                }
-
-                // ===== Submit =====
-
-                VkPipelineStageFlags wait_stages = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
-
-                VkSubmitInfo submit_info{
-                        .sType                = VK_STRUCTURE_TYPE_SUBMIT_INFO,
-                        .waitSemaphoreCount   = 1,
-                        .pWaitSemaphores      = &present_semaphores[frame_index],
-                        .pWaitDstStageMask    = &wait_stages,
-                        .commandBufferCount   = 1,
-                        .pCommandBuffers      = &command_buffer,
-                        .signalSemaphoreCount = 1,
-                        .pSignalSemaphores    = &render_semaphores[image_index],
-                };
-
-                res = vkQueueSubmit(graphics_queue, 1, &submit_info, fences[frame_index]);
-
-                if (res != VK_SUCCESS) {
-                        std::println("Failed to submit queue");
-                        exit(res);
-                }
-
-                frame_index = (frame_index + 1) % max_frames_in_flight;
-
-                // ===== Present =====
-
-                VkPresentInfoKHR present_info{
-                        .sType              = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
-                        .waitSemaphoreCount = 1,
-                        .pWaitSemaphores    = &render_semaphores[image_index],
-                        .swapchainCount     = 1,
-                        .pSwapchains        = &vulkan_swapchain,
-                        .pImageIndices      = &image_index,
-                };
-
-                res = vkQueuePresentKHR(graphics_queue, &present_info);
-
-                if (res != VK_SUCCESS) {
-                        if (res == VK_SUBOPTIMAL_KHR) {
-                                std::println("Warning: should resize");
-                        } else {
-                                std::println("Failed presenting: {}", (int)res);
-                                exit(res);
-                        }
-                }
+                game_context.Render();
 
                 // ===== SDL Polling =====
 
                 float elapsed_time = float(SDL_GetTicks() - last_time) / 1000.0f;
                 last_time          = SDL_GetTicks();
 
-                for (SDL_Event event; SDL_PollEvent(&event);) {
-                        if (event.type == SDL_EVENT_QUIT) {
-                                running = false;
-                                break;
-                        }
-
-                        if (event.type == SDL_EVENT_MOUSE_MOTION) {
-                                if (event.button.button == SDL_BUTTON_LEFT) {
-                                        // Mouse movement
-                                }
-                        }
-
-                        if (event.type == SDL_EVENT_MOUSE_WHEEL) {
-                                camera_position.z += (float)event.wheel.y * elapsed_time * 10.0f;
-                        }
-
-                        if (event.type == SDL_EVENT_KEY_DOWN) {
-                                if (event.key.key == SDLK_ESCAPE) running = false;
-                        }
-
-                        if (event.type == SDL_EVENT_WINDOW_RESIZED) {
-                                swapchain_needs_resizing = true;
-                        }
-                }
+                running = input_system.Update();
         }
 }

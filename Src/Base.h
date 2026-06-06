@@ -33,6 +33,7 @@ using Vec3 = glm::vec3;
 using Vec4 = glm::vec4;
 
 using uVec3 = glm::uvec3;
+using uVec4 = glm::uvec4;
 
 using Mat4 = glm::mat4;
 

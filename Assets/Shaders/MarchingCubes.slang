@@ -94,7 +94,7 @@ uint IsIntersection(PlanetInfo info, uint start_index, uint end_index) {
 
 uint GetIndex(uint3 coords, uint edge_vertex_count) {
         uint edge_vertex_count_squared = edge_vertex_count * edge_vertex_count;
-        return (cell_coords.z * edge_vertex_count_squared) + (cell_coords.y * edge_vertex_count) + cell_coords.x;
+        return (coords.z * edge_vertex_count_squared) + (coords.y * edge_vertex_count) + coords.x;
 }
 
 uint CountIntersections(PlanetInfo info, uint3 cell_coords, uint edge_vertex_count) {
@@ -110,10 +110,6 @@ uint CountIntersections(PlanetInfo info, uint3 cell_coords, uint edge_vertex_cou
         res += IsIntersection(info, start_index, z_index);
 
         return res;
-}
-
-float3 Interpolate(float3 p1, float3 p2, float alpha) {
-        return float3(1);
 }
 
 // TODO: Implement
@@ -183,6 +179,7 @@ void Pass2(uniform PlanetInfo info, uint3 dispatch_id : SV_DispatchThreadID) {
                 // ===== Get Intersection/Vertex Count ===== //
 
                 coords.x = x;
+                // NOTE: Why not just look up edge table?
                 uint intersection_count = CountIntersections(info, coords, edge_vertex_count);
 
                 intersection_sum += intersection_count;
@@ -209,7 +206,16 @@ void Pass2(uniform PlanetInfo info, uint3 dispatch_id : SV_DispatchThreadID) {
         }
 
         info.edge_sums[edge_sum_index].vertex_count = intersection_sum;
-        info.edge_sums[edge_sum_index].triangle_count = triangle_sum;
+        info.edge_sums[edge_sum_index].vertex_offset = intersection_sum;
+        info.edge_sums[edge_sum_index].triangle_count = triangle_sum * 3;
+        info.edge_sums[edge_sum_index].triangle_offset = triangle_sum * 3;
+}
+
+enum EdgeOffset {
+        _00,
+        _01,
+        _10,
+        _11,
 }
 
 // Write Indices and Vertices
@@ -221,12 +227,15 @@ void Pass3(uniform PlanetInfo info, uint3 dispatch_id : SV_DispatchThreadID) {
 
         uint edge_index = (coords.z * edge_vertex_count) + (coords.y);
 
-        uint index_offset = info.edge_sums[edge_index].triangle_offset;
+        // Used for writing to output buffer
         uint vertex_offset = info.edge_sums[edge_index].vertex_offset;
+        uint index_offset = info.edge_sums[edge_index].triangle_offset;
 
-        uint index_y_offset = info.edge_sums[edge_index + 1].triangle_offset;
-        uint index_z_offset = info.edge_sums[edge_index + edge_vertex_count].triangle_offset;
-        uint index_yz_offset = info.edge_sums[edge_index + edge_vertex_count + 1].triangle_offset;
+        // Used for getting index for wanted vertex
+        uint index_00_offset = info.edge_sums[edge_index].triangle_offset;
+        uint index_10_offset = info.edge_sums[edge_index + 1].triangle_offset;
+        uint index_01_offset = info.edge_sums[edge_index + edge_vertex_count].triangle_offset;
+        uint index_11_offset = info.edge_sums[edge_index + edge_vertex_count + 1].triangle_offset;
 
         for (uint x = 0; x < info.chunk_cells; x++) {
                 coords.x = x;
@@ -234,8 +243,8 @@ void Pass3(uniform PlanetInfo info, uint3 dispatch_id : SV_DispatchThreadID) {
                 // ===== Write Vertex Data ===== //
 
                 // NOTE: Dont really like that im re doing this here
-                uint lookup_index = GetLookupIndex(info, edge_index);
-                uint edge_bits = info.edge_case_lookup[lookup_index];
+                uint mc_index = GetLookupIndex(info, edge_index);
+                uint edge_bits = info.edge_case_lookup[mc_index];
 
                 // ===== Generate Vertices for this points forward edges. (edges 0, 3, 8)
                 // Only calculate those that are used
@@ -245,24 +254,24 @@ void Pass3(uniform PlanetInfo info, uint3 dispatch_id : SV_DispatchThreadID) {
                         float3 v1 = v0;
                         v1.x += 1.0;
 
-                        info.vertices[index_offset] = Interpolate(v0, v1, 0.5);
-                        index_offset++;
+                        info.vertices[vertex_offset].position = lerp(v0, v1, 0.5);
+                        vertex_offset++;
                 }
 
                 if ((edge_bits & (1 << 3)) > 0) {
                         float3 v3 = v0;
-                        v1.z += 1.0;
+                        v3.z += 1.0;
 
-                        info.vertices[index_offset] = Interpolate(v0, v3, 0.5);
-                        index_offset++;
+                        info.vertices[vertex_offset].position = lerp(v0, v3, 0.5);
+                        vertex_offset++;
                 }
 
                 if ((edge_bits & (1 << 8)) > 0) {
                         float3 v4 = v0;
-                        v1.y += 1.0;
+                        v4.y += 1.0;
 
-                        info.vertices[index_offset] = Interpolate(v0, v4, 0.5);
-                        index_offset++;
+                        info.vertices[vertex_offset].position = lerp(v0, v4, 0.5);
+                        vertex_offset++;
                 }
 
                 // Vertex is theintepolated value between x edge, y edge and z edge
@@ -271,7 +280,7 @@ void Pass3(uniform PlanetInfo info, uint3 dispatch_id : SV_DispatchThreadID) {
 
                 // ===== For index in triangle, get the actual index in indices, and set.
 
-                TriangleLookup triangles = info.triangle_lookup[lookup_index];
+                TriangleLookup triangles = info.triangle_lookup[mc_index];
 
                 uint3 edge_owner_lookup[12] = {
                         uint3(0),
@@ -288,6 +297,39 @@ void Pass3(uniform PlanetInfo info, uint3 dispatch_id : SV_DispatchThreadID) {
                         uint3(1, 0, 1),
                 };
 
+
+                EdgeOffset edge_offset[12] = {
+                        EdgeOffset._00,
+                        EdgeOffset._00,
+                        EdgeOffset._01,
+                        EdgeOffset._00,
+                        EdgeOffset._10,
+                        EdgeOffset._10,
+                        EdgeOffset._11,
+                        EdgeOffset._10,
+                        EdgeOffset._00,
+                        EdgeOffset._00,
+                        EdgeOffset._01,
+                        EdgeOffset._01,
+                };
+
+                // Do we need to count x and y
+                uint2 do_count_lookup[12] = {
+                        uint2(0, 0),
+                        uint2(1, 1),
+                        uint2(0, 0),
+                        uint2(1, 1),
+                        uint2(0, 0),
+                        uint2(1, 1),
+                        uint2(0, 0),
+                        uint2(1, 1),
+                        uint2(1, 0),
+                        uint2(1, 0),
+                        uint2(1, 0),
+                        uint2(1, 0),
+                };
+
+
                 // NOTE: Need to keep track of current cell offset as well as +z +y +yz
                 for (int i = 0; i < 15; i++) {
                         // Lookup MC table to get which edges make up the triangles.
@@ -296,34 +338,97 @@ void Pass3(uniform PlanetInfo info, uint3 dispatch_id : SV_DispatchThreadID) {
 
                         // Get the vertex which tracks this edge.
                         uint3 edge_coords = coords + edge_owner_lookup[local_index];
+                        uint edge_start_index = (edge_coords.z * edge_vertex_count * edge_vertex_count) + (edge_coords.y * edge_vertex_count);
 
-                        uint owning_edge_index = GetLookupIndex(info, (edge_coords.z * edge_vertex_count) + edge_coords.y);
+                        uint owning_edge_index = GetLookupIndex(info, edge_start_index + edge_coords.z);
 
                         uint owning_edge_case = info.edge_case_lookup[owning_edge_index];
 
                         // Check 0, 3, 8
-                        if (owning_edge_case & (1 << 0)) {
-                                if (local_index == 0) {
-                                        info.indices[vertex_offset] =
-                                }
-                        }
+                        // if ((owning_edge_case & (1 << 0)) > 0) {
+                        //         if (local_index == 0) {
+                        //                 info.indices[index_00_offset];
+                        //         }
+                        // }
 
+                        // Just add one in each direction from this point, if any point more than 1 away from first vertex then
+                        // we know we are out of cell
 
+                        uint3 e0 = edge_coords;
+                        e0.x += 1;
 
+                        uint3 e1 = edge_coords;
+                        e1.y += 1;
 
-                        // uint edge_offset = info.edge_sums[edge_index + 1].vertex_offset;
+                        uint3 e2 = edge_coords;
+                        e2.z += 1;
 
-                        // uint3 other_coords = coords;
-                        // other_coords.x += 1;
+                        uint edge_offset_case = 0;
 
-                        // uint other_index = GetLookupIndex(info, other_coords, edge_vertex_count);
+                        // Check offset - Flip as if offset is 1 we dont want to check it.
+                        edge_offset_case |= ((edge_coords.x - coords.x) ^ 1) << 0; // x
+                        edge_offset_case |= ((edge_coords.y - coords.y) ^ 1) << 1; // y
+                        edge_offset_case |= ((edge_coords.z - coords.z) ^ 1) << 2; // z
 
-                        // edge_offset += (edge_bits & 2) >> 1;
+                        // Check intersection
+                        uint x_intersects = (owning_edge_case & (1 << 0));
+                        uint y_intersects = (owning_edge_case & (1 << 8));
+                        uint z_intersects = (owning_edge_case & (1 << 3));
 
-                        // info.indices[
+                        edge_offset_case &= x_intersects << 0; // x
+                        edge_offset_case &= y_intersects << 1; // y
+                        edge_offset_case &= z_intersects << 2; // z
+
+                        uint delta_x = edge_coords.x - coords.x;
+                        uint delta_y = edge_coords.y - coords.y;
+                        uint delta_z = edge_coords.z - coords.z;
+
+                        uint offset = 0;
+                        offset += (1 - delta_y) * (1 - delta_z) * index_00_offset;
+                        offset += delta_y * (1 - delta_z) * index_10_offset;
+                        offset += (1 - delta_y) * delta_z * index_01_offset;
+                        offset += delta_y * delta_z * index_11_offset;
+
+                        // These might be the same
+                        uint edge_case_0 = GetLookupIndex(info, edge_start_index + coords.x);
+                        uint edge_case_1 = GetLookupIndex(info, edge_start_index + edge_coords.x);
+
+                        uint prev_inters = (edge_case_0 & (1 << 0)) + ((edge_case_0 & (1 << 8)) >> 8) + ((edge_case_0 & (1 << 3)) >> 3);
+
+                        uint2 do_count = do_count_lookup[local_index];
+
+                        uint x_inter = (edge_case_1 & (1 << 0)) >> 0;
+                        uint y_inter = (edge_case_1 & (1 << 8)) >> 8;
+
+                        uint final_index = (delta_x * (prev_inters)) + (x_inter * do_count.x) + (y_inter * do_count.y) + offset;
+
+                        info.indices[index_offset] = final_index;
+                        index_offset++;
                 }
+
+                uint edge_case_00 = GetLookupIndex(info, GetIndex(coords, edge_vertex_count));
+                uint index_00_count = (edge_case_00 & (1 << 0)) + ((edge_case_00 & (1 << 8)) >> 8) + ((edge_case_00 & (1 << 3)) >> 3);
+                index_00_offset += index_00_count;
+
+                uint edge_case_01 = GetLookupIndex(info, GetIndex(coords + uint3(0,0,1), edge_vertex_count));
+                uint index_01_count = (edge_case_01 & (1 << 0)) + ((edge_case_01 & (1 << 8)) >> 8) + ((edge_case_01 & (1 << 3)) >> 3);
+                index_01_offset += index_01_count;
+
+                uint edge_case_10 = GetLookupIndex(info, GetIndex(coords + uint3(0,1,0), edge_vertex_count));
+                uint index_10_count = (edge_case_10 & (1 << 0)) + ((edge_case_10 & (1 << 8)) >> 8) + ((edge_case_10 & (1 << 3)) >> 3);
+                index_10_offset += index_10_count;
+
+                uint edge_case_11 = GetLookupIndex(info, GetIndex(coords + uint3(0,1,1), edge_vertex_count));
+                uint index_11_count = (edge_case_11 & (1 << 0)) + ((edge_case_11 & (1 << 8)) >> 8) + ((edge_case_11 & (1 << 3)) >> 3);
+                index_11_offset += index_11_count;
         }
 
 }
 
 
+// Calculate Normals
+[shader("compute")]
+[numthreads(8, 8, 1)]
+void Pass4(uniform PlanetInfo info, uint3 dispatch_id : SV_DispatchThreadID) {
+        // ...
+}
