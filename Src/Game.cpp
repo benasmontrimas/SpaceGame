@@ -873,6 +873,12 @@ void GameContext::Init() {
 
         InitComputePipeline();
         transfer_engine.Init(vulkan_device, transfer_queue_family, vulkan_allocator);
+
+        // ===== Input ===== //
+
+        input_system.Init();
+
+        SDL_SetWindowRelativeMouseMode(window.window, true);
 }
 
 void GameContext::Shutdown() {
@@ -880,6 +886,9 @@ void GameContext::Shutdown() {
 
         // TODO: move this
         model.Destroy(vulkan_allocator);
+
+        // ===== Input ===== //
+        input_system.Shutdown();
 
         // ===== Transfer ===== //
 
@@ -933,7 +942,7 @@ void GameContext::Shutdown() {
         SDL_Quit();
 }
 
-void GameContext::Render() {
+void GameContext::Render(const Camera& camera) {
         VkResult res;
         res = vkWaitForFences(vulkan_device, 1, &fences[frame_index], true, u64_max);
 
@@ -964,8 +973,9 @@ void GameContext::Render() {
 
         // ===== Shader Data =====
 
-        shader_draw_data.projection = glm::perspective(glm::radians(45.0f), (float)window.width / (float)window.height, 0.1f, 32.0f);
-        shader_draw_data.view       = glm::translate(Mat4(1.0f), camera_position);
+        // shader_draw_data.projection = glm::perspective(glm::radians(45.0f), (float)window.width / (float)window.height, 0.1f, 32.0f);
+        shader_draw_data.projection = camera.GetProjectionMatrix();
+        shader_draw_data.view       = camera.GetViewMatrix();
 
         shader_draw_data.model = glm::translate(Mat4(1.0f), Vec3{ 0, 0, 0 });
         shader_draw_data.model = glm::scale(shader_draw_data.model, { 0.1f, 0.1f, 0.1f });
@@ -1189,11 +1199,34 @@ void GameContext::Render() {
 
 void Game::Init() {
         game_context.Init();
+
+        forward_action = game_context.input_system.RegisterAction("Forward", ActionType::Scalar);
+        forward_action->AddKey(KeyCode::Up);
+        forward_action->AddKey(KeyCode::W);
+
+        back_action = game_context.input_system.RegisterAction("Backward", ActionType::Scalar);
+        back_action->AddKey(KeyCode::Down);
+        back_action->AddKey(KeyCode::S);
+
+        right_action = game_context.input_system.RegisterAction("Right", ActionType::Scalar);
+        right_action->AddKey(KeyCode::Right);
+        right_action->AddKey(KeyCode::D);
+
+        left_action = game_context.input_system.RegisterAction("Left", ActionType::Scalar);
+        left_action->AddKey(KeyCode::Left);
+        left_action->AddKey(KeyCode::A);
+
+
+        camera_controller.Init(game_context, camera.game_object);
 }
 
 void Game::Shutdown() {
         game_context.Shutdown();
+
+        camera_controller.Shutdown();
 }
+
+#include <iostream>
 
 void Game::Run() {
         VkResult res;
@@ -1201,73 +1234,38 @@ void Game::Run() {
         u64  last_time{ SDL_GetTicks() };
         bool running = true;
 
-        // float* density_data = (float*)malloc(sizeof(float) * 33 * 33 * 33);
-
-        // for (u32 i = 0; i < 33 * 33 * 33; i++) {
-        //         density_data[i] = 0;
-        // }
-
-        // GPUBufferWriteInfo write_info{
-        //         .src    = (u8*)&density_data[0],
-        //         .offset = 0,
-        //         .size   = sizeof(float) * 33 * 33 * 33,
-        //         .dst    = planet_density_buffer,
-
-        //         .dst_queue_family = compute_queue_family,
-        // };
-
-        // // Need to release and acquire around this.
-        // // What happens when we acquire a resource that has not been released, but also isnt owned by anyone?
-        // TransferJobID write_id = transfer_engine.QueueGPUBufferWrite(write_info);
-
-        // // NOTE: Can not stall on check as if update is never called, we will never queue the job!
-        // while (!transfer_engine.Check(write_id)) {
-        //         transfer_engine.Update();
-        // }
-
-        // free(density_data);
-
-        // DispatchPlanetGen();
-
-        // float* vals = (float*)malloc(sizeof(float) * 33 * 33 * 33);
-
-        // GPUBufferReadInfo read_job{
-        //         .src              = planet_density_buffer,
-        //         .offset           = 0,
-        //         .size             = sizeof(float) * 33 * 33 * 33,
-        //         .dst              = (u8*)vals,
-        //         .src_queue_family = compute_queue_family,
-        // };
-
-        // TransferJobID read_id = transfer_engine.QueueGPUBufferRead(read_job);
-
-        // while (!transfer_engine.Check(read_id)) {
-        //         transfer_engine.Update();
-        // }
-
-        // // for (u32 i = 0; i < 33 * 33 * 33; i++) {
-        // //         // if (i != (u32)vals[i])
-        // //         std::println("{} : {}", i, vals[i]);
-        // // }
-
-        // free(vals);
-
-        // // ===== Free Resources ===== //
-        // // Why here?
-
-        // // vmaDestroyBuffer(vulkan_allocator, planet_density_buffer.buffer, planet_density_buffer.allocation);
-        // DestroyGPUBuffer(vulkan_device, planet_density_buffer, vulkan_allocator);
-
         while (running) {
-                // ===== Render =====
-
-                game_context.Render();
-
-                // ===== SDL Polling =====
+                // ===== Delta Time ===== //
 
                 float elapsed_time = float(SDL_GetTicks() - last_time) / 1000.0f;
                 last_time          = SDL_GetTicks();
 
-                running = input_system.Update();
+                // ===== Input ===== //
+
+                running = game_context.input_system.Update();
+                camera_controller.Update(elapsed_time);
+
+                // ===== Render ===== //
+
+                game_context.Render(camera);
+
+                // ===== Input Test ===== //
+                if (forward_action->GetScalar() > 0.0f) {
+                        std::println("Move Forward");
+                }
+                if (back_action->GetScalar() > 0.0f) {
+                        std::println("Move Back");
+                }
+                if (right_action->GetScalar() > 0.0f) {
+                        std::println("Move Right");
+                }
+                if (left_action->GetScalar() > 0.0f) {
+                        std::println("Move Left");
+                }
+
+                // game_context.camera_position.x += (-right_action->GetScalar() * 0.1f) + (left_action->GetScalar() * 0.1f);
+                // game_context.camera_position.z += (forward_action->GetScalar() * 0.1f) + (-back_action->GetScalar() * 0.1f);
+
+                std::cout << std::flush;
         }
 }

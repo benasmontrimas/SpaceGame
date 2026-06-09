@@ -15,7 +15,7 @@ TODO:
 
 
 void PrintVariable(slang::VariableReflection* variable, const std::string& prefix);
-void PrintLayout(slang::VariableLayoutReflection layout, const std::string& prefix);
+// void PrintLayout(slang::VariableLayoutReflection layout, const std::string& prefix);
 void PrintArray(slang::TypeReflection* type, const std::string& prefix);
 void PrintStruct(slang::TypeReflection* type, const std::string& prefix);
 void PrintScalar(slang::TypeReflection* type, const std::string& prefix);
@@ -163,9 +163,9 @@ void PrintVariable(slang::VariableReflection* variable, const std::string& prefi
         PrintType(type, prefix);
 }
 
-void PrintLayout(slang::VariableLayoutReflection* layout, const std::string& prefix) {
+// void PrintLayout(slang::VariableLayoutReflection* layout, const std::string& prefix) {
 
-}
+// }
 
 void PrintArray(slang::TypeReflection* type, const std::string& prefix) {
         u32 element_count = type->getElementCount();

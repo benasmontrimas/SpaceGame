@@ -6,7 +6,7 @@
 
 constexpr u32 max_input_actions = 100;
 
-enum KeyCode {
+enum class KeyCode : u32 {
         Unknown = 0,
 
         A = 4,
@@ -47,25 +47,25 @@ enum KeyCode {
         _9 = 38,
         _0 = 39,
 
-        Enter    = 40,
+        Enter     = 40,
         Escape    = 41,
         Backspace = 42,
         Tab       = 43,
         Space     = 44,
 
-        Minus        = 45,
-        Equals       = 46,
+        Minus              = 45,
+        Equals             = 46,
         LeftSquareBracket  = 47,
         RightSquareBracket = 48,
-        Hash    = 49,
+        Hash               = 49,
 
         Semicolon  = 51,
         Apostrophe = 52,
         Tilde      = 53,
 
-        Comma  = 54,
+        Comma    = 54,
         FullStop = 55,
-        Slash  = 56,
+        Slash    = 56,
 
         CapLock = 57,
 
@@ -113,26 +113,26 @@ enum KeyCode {
         KP8        = 96,
         KP9        = 97,
         KP0        = 98,
-        KPFullStop   = 99,
+        KPFullStop = 99,
 
         Application = 101,
         Power       = 102,
 
-        KPEquals  = 103,
-        F13        = 104,
-        F14        = 105,
-        F15        = 106,
-        F16        = 107,
-        F17        = 108,
-        F18        = 109,
-        F19        = 110,
-        F20        = 111,
-        F21        = 112,
-        F22        = 113,
-        F23        = 114,
-        F24        = 115,
+        KPEquals = 103,
+        F13      = 104,
+        F14      = 105,
+        F15      = 106,
+        F16      = 107,
+        F17      = 108,
+        F18      = 109,
+        F19      = 110,
+        F20      = 111,
+        F21      = 112,
+        F22      = 113,
+        F23      = 114,
+        F24      = 115,
 
-        KPComma       = 133,
+        KPComma = 133,
 
         LCTRL  = 224,
         LSHIFT = 225,
@@ -146,7 +146,7 @@ enum KeyCode {
         Count = 232,
 };
 
-constexpr const char* KeyName[KeyCode::Count] = {
+constexpr const char* KeyName[(u32)KeyCode::Count] = {
         "Unknown",
         "Unknown",
         "Unknown",
@@ -408,13 +408,13 @@ constexpr const char* KeyName[KeyCode::Count] = {
 
 enum class KeyState {
         None,
-        Pressed,        // Active for 1 frame
+        Released, // Active for 1 frame
         Held,
-        Released,       // Active for 1 frame
+        Pressed, // Active for 1 frame
 };
 
 struct Key {
-        KeyStage state;
+        KeyState state;
 };
 
 enum class ActionType {
@@ -422,16 +422,81 @@ enum class ActionType {
         Axis,
 };
 
+enum class MouseButtonCode {
+        Unknown = 0,
+        Left    = 1,
+        Middle  = 2,
+        Right   = 3,
+        X1      = 4,
+        X2      = 5,
+
+        Count = 6,
+};
+
+using ButtonState = KeyState;
+
+struct MouseButton {
+        ButtonState state;
+};
+
+struct Mouse {
+        Vec2 position;
+        Vec2 delta;
+        Vec2 wheel_delta;
+
+        MouseButton buttons[(u32)MouseButtonCode::Count];
+};
+
 union ActionValue {
         float scalar;
         Vec2  axis;
 };
 
+enum class InputType {
+        Keyboard,
+        Mouse,
+};
+
+struct MouseInput {
+        MouseButtonCode button;
+};
+
+struct KeyboardInput {
+        KeyCode key;
+};
+
+union Input {
+        MouseInput    mouse;
+        KeyboardInput keyboard;
+};
+
+struct InputAction {
+        InputType type;
+        Input     input;
+
+        KeyCode GetKeyCode() const {
+                return input.keyboard.key;
+        }
+
+        MouseButtonCode GetButtonCode() const {
+                return input.mouse.button;
+        }
+
+        bool operator==(const InputAction& other) {
+                // I can just treat both as mouse right? theyre just u32s.
+                return (type == other.type) and (input.mouse.button == other.input.mouse.button);
+        }
+
+        bool operator!=(const InputAction& other) {
+                return !(*this == other);
+        }
+};
+
 struct Action {
-        std::string name;
-        Key         key;
-        ActionValue value;
-        ActionType  type;
+        std::string              name;
+        std::vector<InputAction> inputs;
+        ActionValue              value;
+        ActionType               type;
 
         float GetScalar() {
                 assert(type == ActionType::Scalar);
@@ -442,18 +507,37 @@ struct Action {
                 assert(type == ActionType::Axis);
                 return value.axis;
         }
+
+        void AddInput(InputAction input) {
+                inputs.push_back(input);
+        }
+
+        void AddKey(KeyCode key) {
+                inputs.emplace_back(InputType::Keyboard, Input{.keyboard = KeyboardInput{.key = key}});
+        }
+
+        void ReplaceInput(InputAction old_input, InputAction new_input) {
+                for (u32 i = 0; i < inputs.size(); i++) {
+                        if (inputs[i] != old_input) continue;
+
+                        inputs[i] = new_input;
+                        return;
+                }
+        }
 };
 
 struct GameContext;
 
 struct InputSystem {
         Action actions[max_input_actions];
-        Key keys[KeyCode::Count];
+        u32    action_count;
+        Key    keys[(u32)KeyCode::Count];
+        Mouse  mouse;
 
         void Init();
         void Shutdown();
         bool Update();
 
-        Action& RegisterAction(const std::string& name, KeyCode key_code, ActionType type);
-        Action& GetAction(const std::string& name);
+        Action* RegisterAction(const std::string& name, ActionType type);
+        Action* GetAction(const std::string& name);
 };

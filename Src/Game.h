@@ -12,6 +12,7 @@
 #include "Model.h"
 #include "Planet.h"
 #include "Resources.h"
+#include "Camera.h"
 
 struct SDL_Window;
 
@@ -37,7 +38,7 @@ struct GameContext {
 
         void Shutdown();
 
-        void Render();
+        void Render(const Camera& camera);
 
         // ====== //
 
@@ -114,6 +115,10 @@ struct GameContext {
 
         bool swapchain_needs_resizing{ false };
 
+        // ===== Input ===== //
+
+        InputSystem input_system;
+
         // ===== REPLACE BELOW ===== //
         Vec3  camera_position{ 0, 0, -10.0f };
         Model model;
@@ -125,9 +130,17 @@ struct Game {
         void Run();
 
         GameContext game_context;
-        InputSystem input_system;
 
         GPUBuffer planet_density_buffer;
 
         Planet planet;
+
+        // Actions
+        Action* forward_action;
+        Action* back_action;
+        Action* right_action;
+        Action* left_action;
+
+        Camera camera;
+        DefaultController camera_controller;
 };
