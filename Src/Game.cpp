@@ -1245,27 +1245,11 @@ void Game::Run() {
                 running = game_context.input_system.Update();
                 camera_controller.Update(elapsed_time);
 
+                SDL_GetWindowSize(game_context.window.window, &game_context.window.width, &game_context.window.height);
+                camera.aspect_ratio = (float)game_context.window.width / (float)game_context.window.height;
+
                 // ===== Render ===== //
 
                 game_context.Render(camera);
-
-                // ===== Input Test ===== //
-                if (forward_action->GetScalar() > 0.0f) {
-                        std::println("Move Forward");
-                }
-                if (back_action->GetScalar() > 0.0f) {
-                        std::println("Move Back");
-                }
-                if (right_action->GetScalar() > 0.0f) {
-                        std::println("Move Right");
-                }
-                if (left_action->GetScalar() > 0.0f) {
-                        std::println("Move Left");
-                }
-
-                // game_context.camera_position.x += (-right_action->GetScalar() * 0.1f) + (left_action->GetScalar() * 0.1f);
-                // game_context.camera_position.z += (forward_action->GetScalar() * 0.1f) + (-back_action->GetScalar() * 0.1f);
-
-                std::cout << std::flush;
         }
 }

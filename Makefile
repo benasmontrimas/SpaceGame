@@ -10,33 +10,27 @@ endif
 
 ifeq ($(config),debug_windows)
   SpaceGame_config = debug_windows
-  ShaderCheck_config = debug_windows
 
 else ifeq ($(config),debug_linux)
   SpaceGame_config = debug_linux
-  ShaderCheck_config = debug_linux
 
 else ifeq ($(config),development_windows)
   SpaceGame_config = development_windows
-  ShaderCheck_config = development_windows
 
 else ifeq ($(config),development_linux)
   SpaceGame_config = development_linux
-  ShaderCheck_config = development_linux
 
 else ifeq ($(config),release_windows)
   SpaceGame_config = release_windows
-  ShaderCheck_config = release_windows
 
 else ifeq ($(config),release_linux)
   SpaceGame_config = release_linux
-  ShaderCheck_config = release_linux
 
 else
   $(error "invalid configuration $(config)")
 endif
 
-PROJECTS := SpaceGame ShaderCheck
+PROJECTS := SpaceGame
 
 .PHONY: all clean help $(PROJECTS) 
 
@@ -48,15 +42,8 @@ ifneq (,$(SpaceGame_config))
 	@${MAKE} --no-print-directory -C Build -f Makefile config=$(SpaceGame_config)
 endif
 
-ShaderCheck:
-ifneq (,$(ShaderCheck_config))
-	@echo "==== Building ShaderCheck ($(ShaderCheck_config)) ===="
-	@${MAKE} --no-print-directory -C Tools/Build -f Makefile config=$(ShaderCheck_config)
-endif
-
 clean:
 	@${MAKE} --no-print-directory -C Build -f Makefile clean
-	@${MAKE} --no-print-directory -C Tools/Build -f Makefile clean
 
 help:
 	@echo "Usage: make [config=name] [target]"
@@ -73,6 +60,5 @@ help:
 	@echo "   all (default)"
 	@echo "   clean"
 	@echo "   SpaceGame"
-	@echo "   ShaderCheck"
 	@echo ""
 	@echo "For more information, see https://github.com/premake/premake-core/wiki"

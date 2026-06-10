@@ -16,6 +16,8 @@
 
 // NOTE: ChunkLoading should generate these.
 struct PlanetChunk {
+        Vec3 position;
+
         u32 vertex_count;
         u32 index_count;
 
@@ -112,8 +114,13 @@ struct Planet {
         GPUBuffer triangle_lookup_buffer;
 
         std::vector<PlanetChunkProgress> chunks_in_progress;
+        std::vector<PlanetChunk> chunks;
+
+        // the game object which chunks will load around.
+        GameObject* target;
 
         void Init(GameContext& game_context);
+        void Shutdown();
         void Update();
 
         int  GetCommandBufferIndex();

@@ -33,7 +33,11 @@ project "SpaceGame"
                 "SDL3",
                 "External/KTX/lib/ktx",
                 "volk",
-                "slang",
+                "External/slang/lib/slang"
+        }
+
+        runpathdirs {
+                "External/slang/lib"
         }
 
         -- Settings --
@@ -70,22 +74,22 @@ project "SpaceGame"
         --         defines { "RELEASE" }
         --         optimize "On"
 
-project "ShaderCheck"
-        kind "ConsoleApp"
-        language "C++"
-        cppdialect "C++23"
-        location "Tools/Build"
+-- project "ShaderCheck"
+--         kind "ConsoleApp"
+--         language "C++"
+--         cppdialect "C++23"
+--         location "Tools/Build"
 
-        files { "Tools/ShaderCheck.cpp" }
+--         files { "Tools/ShaderCheck.cpp" }
 
-        targetdir "Tools/Bin/%{cfg.buildcfg}"
+--         targetdir "Tools/Bin/%{cfg.buildcfg}"
 
-        includedirs { "Src/" }
-        externalincludedirs { "$(VULKAN_SDK)/include" }
+--         includedirs { "Src/" }
+--         externalincludedirs { "$(VULKAN_SDK)/include" }
 
-        warnings "Extra"
+--         warnings "Extra"
 
-        enableunitybuild "On"
-        externalwarnings "Off"
+--         enableunitybuild "On"
+--         externalwarnings "Off"
 
-        links { "$(VULKAN_SDK)/lib/slang" }
+--         links { "$(VULKAN_SDK)/lib/slang" }

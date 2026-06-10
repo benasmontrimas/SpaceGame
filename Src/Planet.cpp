@@ -183,7 +183,74 @@ void Planet::Init(GameContext& game_context) {
         // Need to acquire the buffers on the compute queue.
 }
 
+void Planet::Shutdown() {
+        // TODO:
+}
+
 void Planet::Update() {
+        // TODO: Need to actually check which chunks need to be loaded and unloaded.
+
+        // Create list of all chunks which should be visible in order
+        constexpr u32 chunk_load_range = 10'000;
+        if (target) {
+                Vec3 position = target->position;
+
+                // Just do fixed number in area around player,
+                for (u32 x = 0; x < 5; x++) {
+                        for (u32 y = 0; y < 5; y++) {
+                                for (u32 z = 0; z < 5; z++) {
+                                        // How can we mark empty chunks to prevent adding them?
+                                }
+                        }
+                }
+        }
+
+        // TODO: Check chunks to unload/reload at lower LOD
+        for (u64 i = 0; i < chunks.size(); i++) {
+                if (!target) break; // Cant check if no target given
+
+                constexpr u32 lod0_distance = 100;
+                constexpr u32 lod1_distance = 1000;
+                // Do for as many lods as we want
+
+                PlanetChunk& chunk = chunks[i];
+
+                // Need to offset position to center
+                Vec3 chunk_center = chunk.position + Vec3{32, 32, 32};
+                // Can just use the squared values and square the lod distances to remove sqrt
+                Vec3 distance = glm::magnitude(target.position - chunk_center);
+
+                // If we use an array to store these values we can just loop instead of else if
+                // But i guess how many lods would we want anyway? Maybe it doesnt matter
+                if (distance > lod1_distance) {
+                        // Unload
+                } else if (distance > lod0_distance) {
+                        if (chunk.lod == 1) continue; // Correct LOD
+
+                        // TODO:
+                        // Reload the chunk at the correct LOD level
+
+                        // Loop adjacent lods to update their edges
+                } else {
+                        if (chunk.lod == 0) continue; // Correct LOD
+
+                        // TODO:
+                        // Reload the chunk at the correct LOD level
+
+                        // Loop adjacent lods to update their edges
+                }
+        }
+
+        // TODO: Check chunks to load
+        // How can we check easily if we already have a chunk loaded?
+        // Loop all chunks in radius and spawn ones that are not already there?
+        // Maybe just make an array of chunks by position, and when we loop above,
+        // remove the chunks which are already loaded, then we can just spawn the rest
+        // of the list here.
+
+        // Could do some checks to see where we moved from last frame and we know which positions
+        // we actually need to check.
+
         // ===== Check all in progress chunks if they are ready to go to next stage ===== //
         for (u64 i = 0; i < chunks_in_progress.size(); i++) {
                 PlanetChunkProgress& chunk_progress = chunks_in_progress[i];
