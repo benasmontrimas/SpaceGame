@@ -21,10 +21,10 @@ struct GameObject {
 struct Camera {
         GameObject game_object;
 
-        float fov{ 60 };
+        float fov{ 60.0f };
         float aspect_ratio{ 1.0f };
-        float near{ 0.1 };
-        float far{ 5'000 };
+        float near{ 0.1f };
+        float far{ 5'000.0f };
 
         void Update(GameContext& game_context);
 

@@ -28,14 +28,6 @@ project "SpaceGame"
                 "$(VULKAN_SDK)/lib/",
         }
 
-        links {
-                "vulkan",
-                "SDL3",
-                "External/KTX/lib/ktx",
-                "volk",
-                "External/slang/lib/slang"
-        }
-
         runpathdirs {
                 "External/slang/lib"
         }
@@ -55,10 +47,27 @@ project "SpaceGame"
                 defines { "OS_WINDOWS" }
                 system ("windows")
 
+                links {
+                        "vulkan-1",
+                        "SDL3",
+                        "External/KTX/lib/ktx",
+                        "volk",
+                        "slang"
+                }
+
         filter "platforms:Linux"
                 defines { "OS_LINUX" }
                 system ("linux")
                 disablewarnings { "missing-field-initializers" }
+
+                links {
+                        "vulkan",
+                        "vulkan-1",
+                        "SDL3",
+                        "External/KTX/lib/ktx",
+                        "volk",
+                        "External/slang/lib/slang"
+                }
 
         filter "configurations:Debug"
                 defines { "DEBUG", "DEBUG_TRACE", "DEBUG_INFO", "DEBUG_WARNINGS"}

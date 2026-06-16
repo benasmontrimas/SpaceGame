@@ -79,7 +79,7 @@ struct AABB {
 
         // Return the distance to the AABB
         float Distance(Vec3 p) {
-                float res;
+                float res {};
 
                 Vec3 min = (center - radius);
                 Vec3 max = (center + radius);
@@ -94,7 +94,7 @@ struct AABB {
 
         // Return the distance to the AABB
         float DistanceSq(Vec3 p) {
-                float res;
+                float res {};
 
                 Vec3 min = (center - radius);
                 Vec3 max = (center + radius);

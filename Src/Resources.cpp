@@ -66,7 +66,7 @@ GPUBuffer CreateReadbackBuffer(VkDevice vulkan_device, VmaAllocator allocator, u
 // ===== Transfer Functions ===== //
 
 void TransferEngine::Init(VkDevice device, u32 transfer_queue_family_index, VmaAllocator allocator) {
-        VkResult res;
+        VkResult res{};
 
         // ===== Set Variables ===== //
 
@@ -162,7 +162,7 @@ void TransferEngine::Shutdown() {
 void TransferEngine::Update() {
         // std::println("Update");
 
-        VkResult res;
+        VkResult res{};
 
         while (true) {
                 if (first_pending == transfer_queue_end) break;
@@ -428,7 +428,7 @@ void TransferEngine::ReleaseStagingBufferRegion(BufferRegion buffer_region) {
 // NOTE: Its rare we will want to read data back from buffers, usually we just want to transfer ownership to use it straight away
 // // or transfer to be able to write to it.
 void TransferEngine::GPUBufferRead(VkCommandBuffer command_buffer, const TransferJob& job) {
-        VkResult res;
+        VkResult res{};
 
         // ===== Begin Command Buffer ===== //
 
@@ -544,7 +544,7 @@ void TransferEngine::GPUBufferRead(VkCommandBuffer command_buffer, const Transfe
 void TransferEngine::GPUBufferWrite(VkCommandBuffer command_buffer, const TransferJob& job) {
         std::println("GPUBufferWrite Called");
 
-        VkResult res;
+        VkResult res{};
 
         // ===== Begin Command Buffer ===== //
 

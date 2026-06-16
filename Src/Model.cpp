@@ -88,7 +88,7 @@ void Model::Destroy(GameContext& game_context) {
 }
 
 void Texture::Load(VkDevice device, VkCommandPool command_pool, VkQueue queue, const std::string& file_name, const VmaAllocator& allocator) {
-        VkResult res;
+        VkResult res{};
 
         ktxTexture* ktx_texture{};
 

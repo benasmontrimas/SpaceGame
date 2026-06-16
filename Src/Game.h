@@ -139,7 +139,7 @@ struct GameContext {
         // ===== Functions ===== //
 
         u32 GetLastFinishedFrame() const {
-                return frames_submitted - max_frames_in_flight;
+                return u32(frames_submitted - max_frames_in_flight);
         }
 
         void AddTexture(const Texture& texture, u32 index);

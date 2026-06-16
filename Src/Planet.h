@@ -37,7 +37,7 @@ constexpr float CHUNK_LOD_DISTANCES[CHUNK_LOD_DISTANCE_COUNT] = {
 };
 
 constexpr u32 MINIMUM_CHUNK_DIMS = 32;
-constexpr u32 PLANET_MAX_RADIUS  = 600'000;
+constexpr u32 PLANET_MAX_RADIUS  = 60'000;
 
 // Calculates the size the root of the chunk tree given a minimum chunk size.
 constexpr u32 GetTreeRootDiameter() {
@@ -282,7 +282,7 @@ struct Planet {
         void ReleaseCommandBufferIndex(int index);
 
         // TODO: I have changed these here -> Return EMPTY_NODE if empty! Oh wait we wont know yet!
-        u32  GenerateChunk(AABB bounds);
+        u32  GenerateChunk(AABB bounds, u32 lod_level);
         void DestroyChunk(u32 chunk_index);
 
         void FreeChunkInProgress(PlanetChunkProgress& chunk_progress);
