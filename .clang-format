@@ -160,8 +160,8 @@ IncludeCategories:
 IncludeIsMainRegex: '(Test)?$'
 IncludeIsMainSourceRegex: ''
 IndentAccessModifiers: false
-IndentCaseBlocks: false
-IndentCaseLabels: false
+IndentCaseBlocks: true
+IndentCaseLabels: true
 IndentExportBlock: true
 IndentExternBlock: AfterExternBlock
 IndentGotoLabels: true

@@ -51,28 +51,28 @@ project "SpaceGame"
 
         -- links { "$(VULKAN_SDK)/lib/vulkan", "External/KTX/lib/ktx", "$(VULKAN_SDK)/lib/SDL3", "$(VULKAN_SDK)/lib/volk", "$(VULKAN_SDK)/lib/slang"}
 
-        -- filter "platforms:Windows"
-        --         defines { "OS_WINDOWS" }
-        --         system ("windows")
+        filter "platforms:Windows"
+                defines { "OS_WINDOWS" }
+                system ("windows")
 
-        -- filter "platforms:Linux"
-        --         defines { "OS_LINUX" }
-        --         system ("linux")
-        --         disablewarnings { "missing-field-initializers" }
+        filter "platforms:Linux"
+                defines { "OS_LINUX" }
+                system ("linux")
+                disablewarnings { "missing-field-initializers" }
 
-        -- filter "configurations:Debug"
-        --         defines { "DEBUG", "DEBUG_TRACE", "DEBUG_INFO", "DEBUG_WARNINGS"}
-        --         symbols "On"
+        filter "configurations:Debug"
+                defines { "DEBUG", "DEBUG_TRACE", "DEBUG_INFO", "DEBUG_WARNINGS"}
+                symbols "On"
 
-        -- filter "configurations:Development"
-        --         defines { "DEBUG", "DEBUG_TRACE", "DEBUG_INFO", "DEBUG_WARNINGS"}
-        --         symbols "On"
-        --         optimize "Debug"
+        filter "configurations:Development"
+                defines { "DEBUG", "DEBUG_TRACE", "DEBUG_INFO", "DEBUG_WARNINGS"}
+                symbols "On"
+                optimize "Debug"
 
-        -- filter "configurations:Release"
-        --       -- kind "WindowedApp"
-        --         defines { "RELEASE" }
-        --         optimize "On"
+        filter "configurations:Release"
+              -- kind "WindowedApp"
+                defines { "RELEASE" }
+                optimize "On"
 
 -- project "ShaderCheck"
 --         kind "ConsoleApp"

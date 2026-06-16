@@ -33,6 +33,15 @@ GPUBuffer CreateGPUBuffer(VkDevice vulkan_device, VmaAllocator allocator, u64 si
         vkCreateSemaphore(vulkan_device, &semaphore_info, nullptr, &buffer.ownership_semaphore);
         vkCreateSemaphore(vulkan_device, &semaphore_info, nullptr, &buffer.transfer_semaphore);
 
+        if ((usage & VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT) == VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT) {
+                VkBufferDeviceAddressInfo vertex_buffer_address_info{
+                        .sType  = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO,
+                        .buffer = buffer.buffer,
+                };
+
+                buffer.device_address = vkGetBufferDeviceAddress(vulkan_device, &vertex_buffer_address_info);
+        }
+
         return buffer;
 }
 
@@ -147,7 +156,6 @@ void TransferEngine::Shutdown() {
                 vkDestroyFence(vulkan_device, fences[i], nullptr);
         }
 
-        // vmaDestroyBuffer(vulkan_allocator, staging_buffer.buffer, staging_buffer.allocation);
         DestroyGPUBuffer(vulkan_device, staging_buffer, vulkan_allocator);
 }
 
@@ -229,16 +237,22 @@ void TransferEngine::Update() {
                 std::println("Job Type: {}", (u32)job.type);
 
                 switch (job.type) {
-                case TransferJobType::Copy: {
-                        std::println("Copy not yet implemented");
-                        exit(1);
-                } break;
-                case TransferJobType::Read: {
-                        GPUBufferRead(command_buffer, job);
-                } break;
-                case TransferJobType::Write: {
-                        GPUBufferWrite(command_buffer, job);
-                } break;
+                        case TransferJobType::Copy:
+                                {
+                                        std::println("Copy not yet implemented");
+                                        exit(1);
+                                }
+                                break;
+                        case TransferJobType::Read:
+                                {
+                                        GPUBufferRead(command_buffer, job);
+                                }
+                                break;
+                        case TransferJobType::Write:
+                                {
+                                        GPUBufferWrite(command_buffer, job);
+                                }
+                                break;
                 }
 
                 // ===== Set Vars ===== //

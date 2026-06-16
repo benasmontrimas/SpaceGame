@@ -311,6 +311,7 @@ void GameContext::Init() {
                 .shaderSampledImageArrayNonUniformIndexing = true,
                 .descriptorBindingVariableDescriptorCount  = true,
                 .runtimeDescriptorArray                    = true,
+                .timelineSemaphore                         = true,
                 .bufferDeviceAddress                       = true,
         };
 
@@ -516,11 +517,6 @@ void GameContext::Init() {
                 exit(res);
         }
 
-        // ===== Mesh Data =====
-        // ===== THIS SHOULDNT BE HERE =====
-
-        model.LoadFromOBJ("Assets/Models/test.obj", vulkan_allocator);
-
         // ===== Shader Data Buffers =====
 
         // NOTE: Why are these not just in 1 buffer? this way is easier, but also means were doing more allocations?
@@ -528,7 +524,7 @@ void GameContext::Init() {
                 VmaAllocationCreateFlags allocation_flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
                                                             VMA_ALLOCATION_CREATE_HOST_ACCESS_ALLOW_TRANSFER_INSTEAD_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT;
 
-                draw_data[i] = CreateGPUBuffer(vulkan_device, vulkan_allocator, sizeof(ShaderDrawData), graphics_queue_family,
+                draw_data[i] = CreateGPUBuffer(vulkan_device, vulkan_allocator, sizeof(ShaderDrawData) * max_draw_count, graphics_queue_family,
                                                VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT, allocation_flags);
 
                 VkBufferDeviceAddressInfo uniform_buffer_address_info{
@@ -665,24 +661,6 @@ void GameContext::Init() {
                 std::println("Failed allocating descriptor sets");
                 exit(res);
         }
-
-        // ===== Writes the texture data so shaders can see =====
-
-        std::vector<VkDescriptorImageInfo> texture_descriptors{};
-        // Store Sampler, ImageView, ImageLayout
-        // We can do this as we load textures?
-
-        // VkWriteDescriptorSet               write_descriptor_set{
-        //                       .sType           = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-        //                       .dstSet          = descriptor_set,
-        //                       .dstBinding      = 0,
-        //                       .descriptorCount = (u32)100,
-        //                       .descriptorType  = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-        //                       .pImageInfo      = texture_descriptors.data(),
-        // };
-
-        // This actually updates, how expensive is this? Can we do it every texture loaded, or better to queue?
-        // vkUpdateDescriptorSets(vulkan_device, 1, &write_descriptor_set, 0, nullptr);
 
         // ===== Pipeline Layout ===== //
 
@@ -876,18 +854,46 @@ void GameContext::Init() {
 
         // ===== Input ===== //
 
-        input_system.Init();
-
         SDL_SetWindowRelativeMouseMode(window.window, true);
+
+        input_system.Init(&window);
+}
+
+void GameContext::AddTexture(const Texture& texture, u32 index) {
+        // ===== Update Descriptor ===== //
+
+        VkDescriptorImageInfo texture_descriptor{};
+
+        texture_descriptor.sampler     = texture.sampler;
+        texture_descriptor.imageView   = texture.image_view;
+        texture_descriptor.imageLayout = VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL;
+
+        VkWriteDescriptorSet write_descriptor_set{
+                .sType           = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+                .dstSet          = descriptor_set,
+                .dstBinding      = 0,
+                .dstArrayElement = index,
+                .descriptorCount = (u32)1,
+                .descriptorType  = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+                .pImageInfo      = &texture_descriptor,
+        };
+
+        // This actually updates, how expensive is this? Can we do it every texture loaded, or better to queue?
+        vkUpdateDescriptorSets(vulkan_device, 1, &write_descriptor_set, 0, nullptr);
 }
 
 void GameContext::Shutdown() {
         vkDeviceWaitIdle(vulkan_device);
 
-        // TODO: move this
-        model.Destroy(vulkan_allocator);
+        // ===== Destroy Models ===== //
+
+        for (u64 i = 0; i < models.size(); i++) {
+                Model& model = models[i];
+                model.Destroy(*this);
+        }
 
         // ===== Input ===== //
+
         input_system.Shutdown();
 
         // ===== Transfer ===== //
@@ -909,7 +915,6 @@ void GameContext::Shutdown() {
         for (u32 i = 0; i < max_frames_in_flight; i++) {
                 vkDestroyFence(vulkan_device, fences[i], nullptr);
                 vkDestroySemaphore(vulkan_device, present_semaphores[i], nullptr);
-                // vmaDestroyBuffer(vulkan_allocator, draw_data[i].buffer, draw_data[i].allocation);
                 DestroyGPUBuffer(vulkan_device, draw_data[i], vulkan_allocator);
         }
 
@@ -952,6 +957,7 @@ void GameContext::Render(const Camera& camera) {
         }
 
         res = vkResetFences(vulkan_device, 1, &fences[frame_index]);
+        frames_submitted++;
 
         if (res != VK_SUCCESS) {
                 std::println("Failed resetting fences");
@@ -968,19 +974,11 @@ void GameContext::Render(const Camera& camera) {
                 }
 
                 swapchain_needs_resizing = true;
+                std::println("Resize?");
         }
 
 
         // ===== Shader Data =====
-
-        // shader_draw_data.projection = glm::perspective(glm::radians(45.0f), (float)window.width / (float)window.height, 0.1f, 32.0f);
-        shader_draw_data.projection = camera.GetProjectionMatrix();
-        shader_draw_data.view       = camera.GetViewMatrix();
-
-        shader_draw_data.model = glm::translate(Mat4(1.0f), Vec3{ 0, 0, 0 });
-        shader_draw_data.model = glm::scale(shader_draw_data.model, { 0.1f, 0.1f, 0.1f });
-
-        memcpy(draw_data[frame_index].allocation_info.pMappedData, &shader_draw_data, sizeof(ShaderDrawData));
 
         VkCommandBuffer command_buffer = graphics_command_buffers[frame_index];
 
@@ -1107,14 +1105,36 @@ void GameContext::Render(const Camera& camera) {
 
         vkCmdBindDescriptorSets(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_layout, 0, 1, &descriptor_set, 0, nullptr);
 
-        VkDeviceSize vertex_offset{ 0 };
-        vkCmdBindVertexBuffers(command_buffer, 0, 1, &model.meshes[0].buffer, &vertex_offset);
+        // Draw Models
+        assert(max_draw_count > models.size());
+        for (u32 i = 0; i < models.size(); i++) {
 
-        vkCmdBindIndexBuffer(command_buffer, model.meshes[0].buffer, model.meshes[0].vertices_size, VK_INDEX_TYPE_UINT32);
+                // All below can be made into model member function
+                Model& model = models[i];
 
-        vkCmdPushConstants(command_buffer, pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(VkDeviceAddress), &draw_data[frame_index].device_address);
+                if (model.meshes[0].index_count == 0) continue;
 
-        vkCmdDrawIndexed(command_buffer, (u32)model.meshes[0].index_count, 1, 0, 0, 0);
+                shader_draw_data.projection = camera.GetProjectionMatrix();
+                shader_draw_data.view       = camera.GetViewMatrix();
+
+                // TODO: Rotation
+                shader_draw_data.model = glm::translate(Mat4(1.0f), model.transform.position);
+                shader_draw_data.model = glm::scale(shader_draw_data.model, model.transform.scale);
+
+                u64 draw_data_offset = sizeof(ShaderDrawData) * i;
+                memcpy((u8*)draw_data[frame_index].allocation_info.pMappedData + draw_data_offset, &shader_draw_data, sizeof(ShaderDrawData));
+
+                VkDeviceSize vertex_offset{ 0 };
+                vkCmdBindVertexBuffers(command_buffer, 0, 1, &model.meshes[0].buffer.buffer, &vertex_offset);
+
+                vkCmdBindIndexBuffer(command_buffer, model.meshes[0].buffer.buffer, model.meshes[0].vertices_size, VK_INDEX_TYPE_UINT32);
+
+                // I can just store a vector for each frame and clear when its finished, push back, pass pointer, and use other next vector next frame.
+                u64 device_address = draw_data[frame_index].device_address + draw_data_offset;
+                vkCmdPushConstants(command_buffer, pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(VkDeviceAddress), &device_address);
+
+                vkCmdDrawIndexed(command_buffer, (u32)model.meshes[0].index_count, 1, 0, 0, 0);
+        }
 
         vkCmdEndRendering(command_buffer);
 
@@ -1218,12 +1238,51 @@ void Game::Init() {
 
 
         camera_controller.Init(game_context, camera.game_object);
+
+        // ===== Planet ===== //
+
+        planet.Init(&game_context, &camera.game_object);
+
+        // ===== Mesh Data =====
+
+        // Skysphere
+        {
+                Model model;
+                model.LoadFromOBJ(game_context, "Assets/Models/SkySphere.obj");
+                game_context.models.push_back(model);
+        }
+
+        // test mesh
+        {
+                Model model;
+                model.LoadFromOBJ(game_context, "Assets/Models/test.obj");
+                game_context.models.push_back(model);
+        }
+
+        // ===== Textures ===== //
+
+        skymap.Load(game_context.vulkan_device, game_context.graphics_command_pool, game_context.graphics_queue, "Assets/SkyMaps/SpaceLDR.ktx",
+                    game_context.vulkan_allocator);
+        game_context.AddTexture(skymap, 0);
 }
 
 void Game::Shutdown() {
-        game_context.Shutdown();
+        vkDeviceWaitIdle(game_context.vulkan_device);
 
+        skymap.Destroy(game_context);
+        planet.Shutdown();
         camera_controller.Shutdown();
+
+        game_context.Shutdown();
+}
+
+void Game::Update(float delta_time) {
+        camera.Update(game_context);
+        camera_controller.Update(delta_time);
+
+        game_context.models[0].transform.position = camera.game_object.position;
+
+        planet.Update();
 }
 
 #include <iostream>
@@ -1237,16 +1296,16 @@ void Game::Run() {
         while (running) {
                 // ===== Delta Time ===== //
 
-                float elapsed_time = float(SDL_GetTicks() - last_time) / 1000.0f;
-                last_time          = SDL_GetTicks();
+                float delta_time = float(SDL_GetTicks() - last_time) / 1000.0f;
+                last_time        = SDL_GetTicks();
 
                 // ===== Input ===== //
 
                 running = game_context.input_system.Update();
-                camera_controller.Update(elapsed_time);
 
-                SDL_GetWindowSize(game_context.window.window, &game_context.window.width, &game_context.window.height);
-                camera.aspect_ratio = (float)game_context.window.width / (float)game_context.window.height;
+                // ===== Gameplay Update ===== //
+
+                Update(delta_time);
 
                 // ===== Render ===== //
 

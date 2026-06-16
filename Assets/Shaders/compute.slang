@@ -1,9 +1,4 @@
-/*
-NOTE:
-- Implement decent noise functions in a seperate file to include.
-- Use includes well, this will make my life VERY easy.
-*/
-
+import noise;
 
 struct FieldData {
         float density;
@@ -337,6 +332,7 @@ struct Row {
 struct Vertex {
         float3 position;
         float3 normal; // We can just normalize? or better to store normal counts and use that?
+        float2 uv;
 };
 
 static const uint x_bit = 4;

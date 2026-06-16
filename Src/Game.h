@@ -8,11 +8,11 @@
 
 #include <vector>
 
+#include "Camera.h"
 #include "InputSystem.h"
 #include "Model.h"
 #include "Planet.h"
 #include "Resources.h"
-#include "Camera.h"
 
 struct SDL_Window;
 
@@ -25,9 +25,11 @@ struct Window {
 // Per Model - TODO: Split into VP and M matrices, can pass VP at start of render.
 // Can even pass all model matrices with VP? pre calc and send together.
 struct ShaderDrawData {
-        Mat4 projection;
+        Mat4 projection; //
         Mat4 view;
         Mat4 model;
+
+        Mat4 padding;
 };
 
 // NOTE: Can I split out core stuff into a GameContext struct so that I can pass that around to systems and have gameplay in Game.
@@ -43,6 +45,7 @@ struct GameContext {
         // ====== //
 
         static constexpr u32 max_frames_in_flight{ 2 };
+        static constexpr u32 max_draw_count{ 1'000 };
 
         // ====== //
 
@@ -71,9 +74,13 @@ struct GameContext {
 
         GPUBuffer draw_data[max_frames_in_flight];
 
+        // ===== Sync ===== //
+
         std::vector<VkSemaphore> render_semaphores;
         VkSemaphore              present_semaphores[max_frames_in_flight];
         VkFence                  fences[max_frames_in_flight];
+
+        // ===== Render ===== //
 
         VkCommandPool   graphics_command_pool;
         VkCommandBuffer graphics_command_buffers[max_frames_in_flight];
@@ -108,32 +115,46 @@ struct GameContext {
 
         TransferEngine transfer_engine;
 
+        // ===== Render Data ===== //
+
         u32 frame_index{};
         u32 image_index{};
+
+        u64 frames_submitted{}; // (frames_submitted - max_frames_in_flight) == last know finished frame
 
         ShaderDrawData shader_draw_data;
 
         bool swapchain_needs_resizing{ false };
+
+        // ===== Meshes ===== //
+        std::vector<Model> models;
 
         // ===== Input ===== //
 
         InputSystem input_system;
 
         // ===== REPLACE BELOW ===== //
-        Vec3  camera_position{ 0, 0, -10.0f };
-        Model model;
+        Vec3 camera_position{ 0, 0, -10.0f };
+
+        // ===== Functions ===== //
+
+        u32 GetLastFinishedFrame() const {
+                return frames_submitted - max_frames_in_flight;
+        }
+
+        void AddTexture(const Texture& texture, u32 index);
 };
 
 struct Game {
         void Init();
         void Shutdown();
+        void Update(float delta_time);
         void Run();
 
         GameContext game_context;
 
-        GPUBuffer planet_density_buffer;
-
-        Planet planet;
+        Planet  planet;
+        Texture skymap;
 
         // Actions
         Action* forward_action;
@@ -141,6 +162,6 @@ struct Game {
         Action* right_action;
         Action* left_action;
 
-        Camera camera;
+        Camera            camera;
         DefaultController camera_controller;
 };

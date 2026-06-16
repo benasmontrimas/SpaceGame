@@ -34,9 +34,9 @@ struct TriangleLookup {
 
 // NOTE: This could be 32 bytes, but it gets padded to 48...
 struct Vertex {
-        float3 position;
-        float3 normal;
-        float2 uv;
+        float4 position;
+        float4 normal;
+        float4 uv;
 };
 
 // NOTE: Pass Chunk Cells/Dims as float?
@@ -254,7 +254,7 @@ void Pass3(uniform PlanetInfo info, uint3 dispatch_id : SV_DispatchThreadID) {
                         float3 v1 = v0;
                         v1.x += 1.0;
 
-                        info.vertices[vertex_offset].position = lerp(v0, v1, 0.5);
+                        info.vertices[vertex_offset].position.xyz = lerp(v0, v1, 0.5);
                         vertex_offset++;
                 }
 
@@ -262,7 +262,7 @@ void Pass3(uniform PlanetInfo info, uint3 dispatch_id : SV_DispatchThreadID) {
                         float3 v3 = v0;
                         v3.z += 1.0;
 
-                        info.vertices[vertex_offset].position = lerp(v0, v3, 0.5);
+                        info.vertices[vertex_offset].position.xyz = lerp(v0, v3, 0.5);
                         vertex_offset++;
                 }
 
@@ -270,7 +270,7 @@ void Pass3(uniform PlanetInfo info, uint3 dispatch_id : SV_DispatchThreadID) {
                         float3 v4 = v0;
                         v4.y += 1.0;
 
-                        info.vertices[vertex_offset].position = lerp(v0, v4, 0.5);
+                        info.vertices[vertex_offset].position.xyz = lerp(v0, v4, 0.5);
                         vertex_offset++;
                 }
 

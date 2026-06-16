@@ -3,8 +3,13 @@
 #include "Base.h"
 #include "InputSystem.h"
 
+// I think we want to make everything attach to game objects.
+// If we want something to have a mesh we have to pass the owning game object.
+// That was it can use its transform for rendering, and it will sync with other systems.
+
+// Then just store an array of children so that we can have objects relative to other objects
 struct GameObject {
-        Vec3 position {0, 0, -10};
+        Vec3 position{ 0, 0, -10 };
         Vec3 rotation;
         Vec3 scale;
 
@@ -16,10 +21,12 @@ struct GameObject {
 struct Camera {
         GameObject game_object;
 
-        float fov {60};
-        float aspect_ratio{1.0f};
-        float near {0.1};
-        float far {1000};
+        float fov{ 60 };
+        float aspect_ratio{ 1.0f };
+        float near{ 0.1 };
+        float far{ 5'000 };
+
+        void Update(GameContext& game_context);
 
         Mat4 GetViewMatrix() const;
         Mat4 GetProjectionMatrix() const;
@@ -37,10 +44,10 @@ struct DefaultController {
         Action* up_action;
         Action* down_action;
 
-        float movement_speed {10};
+        float movement_speed{ 10 };
 
         GameContext* game_context;
-        GameObject* owner;
+        GameObject*  owner;
 
         void Init(GameContext& _game_context, GameObject& _owner);
         void Shutdown();

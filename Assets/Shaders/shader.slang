@@ -1,16 +1,16 @@
-/* Copyright (c) 2025-2026, Sascha Willems
- *
- * SPDX-License-Identifier: MIT
- *
- */
+Sampler2D textures[];
 
 struct VSInput {
-        float3 Pos;
-        float3 Normal;
-        float2 UV;
+        float3 position;
+        float3 normal;
+        float2 uv;
 };
 
-Sampler2D textures[];
+struct VSOutput {
+        float4 position : SV_POSITION;
+        float3 normal;
+        float2 uv;
+};
 
 struct ShaderData {
         float4x4 projection;
@@ -18,45 +18,25 @@ struct ShaderData {
         float4x4 model;
 };
 
-struct VSOutput {
-        float4   Pos : SV_POSITION;
-        float3   Normal;
-        float2   UV;
-        float3   Factor;
-        float3   LightVec;
-        float3   ViewVec;
-        uint32_t InstanceIndex;
-};
-
-// clang-format off
 [shader("vertex")]
-VSOutput main(VSInput input, uniform ShaderData* shaderData, uint instanceIndex : SV_VulkanInstanceID) {
-        // clang-format on
+VSOutput main(VSInput input, uniform ShaderData* shader_data, uint instance_index : SV_VulkanInstanceID) {
         VSOutput output;
-        float4x4 modelMat    = shaderData.model;
-        output.Normal        = mul((float3x3)mul(shaderData.view, modelMat), input.Normal);
-        output.UV            = input.UV;
-        output.Pos           = mul(shaderData.projection, mul(shaderData.view, mul(modelMat, float4(input.Pos.xyz, 1.0))));
-        output.Factor        = 1.0f;
-        output.InstanceIndex = instanceIndex;
-        // Calculate view vectors required for lighting
-        float4 fragPos       = mul(mul(shaderData.view, modelMat), float4(input.Pos.xyz, 1.0));
-        output.LightVec      = fragPos.xyz;
-        output.ViewVec       = -fragPos.xyz;
+
+        output.position    = mul(shader_data.projection, mul(shader_data.view, mul(shader_data.model, float4(input.position.xyz, 1.0))));
+        output.normal      = normalize(mul((float3x3)transpose(shader_data.model), input.normal.xyz));
+        output.uv          = input.uv.xy;
+
         return output;
 }
 
 [shader("fragment")]
 float4 main(VSOutput input) {
-        // Phong lighting
-        float3 N        = normalize(input.Normal);
-        float3 L        = normalize(input.LightVec);
-        float3 V        = normalize(input.ViewVec);
-        float3 R        = reflect(-L, N);
-        float3 diffuse  = max(dot(N, L), 0.0025);
-        float3 specular = pow(max(dot(R, V), 0.0), 16.0) * 0.75;
-        // Sample from texture
-        // float3 color = textures[NonUniformResourceIndex(input.InstanceIndex)].Sample(input.UV).rgb * input.Factor;
-        float3 color    = { 0.0f, 1.0f, 0.0f };
-        return float4(diffuse * color.rgb + specular, 1.0);
+        float theta = asin(input.normal.z);
+        float phi   = atan2(input.normal.y, input.normal.x);
+
+        float pi = float.getPi();
+        float u  = (phi / (2 * pi)) + 0.5;
+        float v  = (theta / (pi)) + 0.5;
+
+        return textures[0].Sample(float2(u, v));
 }

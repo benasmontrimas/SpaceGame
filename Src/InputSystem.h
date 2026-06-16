@@ -513,7 +513,7 @@ struct Action {
         }
 
         void AddKey(KeyCode key) {
-                inputs.emplace_back(InputType::Keyboard, Input{.keyboard = KeyboardInput{.key = key}});
+                inputs.emplace_back(InputType::Keyboard, Input{ .keyboard = KeyboardInput{ .key = key } });
         }
 
         void ReplaceInput(InputAction old_input, InputAction new_input) {
@@ -527,6 +527,7 @@ struct Action {
 };
 
 struct GameContext;
+struct Window;
 
 struct InputSystem {
         Action actions[max_input_actions];
@@ -534,7 +535,9 @@ struct InputSystem {
         Key    keys[(u32)KeyCode::Count];
         Mouse  mouse;
 
-        void Init();
+        Window* window; // Need to handle resize and move
+
+        void Init(Window* window);
         void Shutdown();
         bool Update();
 

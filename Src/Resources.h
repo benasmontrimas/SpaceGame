@@ -31,7 +31,9 @@ constexpr VmaAllocationCreateFlags GPUBuffer_READBACK = VMA_ALLOCATION_CREATE_HO
 [[nodiscard]]
 GPUBuffer CreateGPUBuffer(VkDevice vulkan_device, VmaAllocator allocator, u64 size, u32 owning_queue_family, VkBufferUsageFlags usage,
                           VmaAllocationCreateFlags allocation_flags, VmaMemoryUsage memory_usage = VMA_MEMORY_USAGE_AUTO);
+[[nodiscard]]
 GPUBuffer CreateStagingBuffer(VkDevice vulkan_device, VmaAllocator allocator, u64 size, u32 owning_queue_family);
+[[nodiscard]]
 GPUBuffer CreateReadbackBuffer(VkDevice vulkan_device, VmaAllocator allocator, u64 size, u32 owning_queue_family);
 
 void DestroyGPUBuffer(VkDevice vulkan_device, GPUBuffer& buffer, VmaAllocator allocator);
