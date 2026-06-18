@@ -9,8 +9,6 @@
 #define VOLK_IMPLEMENTATION
 #include "volk/volk.h"
 
-#include "ktx.h"
-#include "ktxvulkan.h"
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_vulkan.h>
 
@@ -1285,11 +1283,7 @@ void Game::Update(float delta_time) {
         planet.Update();
 }
 
-#include <iostream>
-
 void Game::Run() {
-        VkResult res;
-
         u64  last_time{ SDL_GetTicks() };
         bool running = true;
 
