@@ -17,7 +17,7 @@
 #include <vector>
 
 void GameContext::InitComputePipeline() {
-        VkResult res;
+        VkResult res{};
 
         // ===== Create Compute Pipeline Layout ===== //
 
@@ -133,7 +133,7 @@ void GameContext::InitComputePipeline() {
 }
 
 void GameContext::Init() {
-        VkResult res;
+        VkResult res{};
 
         // ===== Initialise Libraries =====
 
@@ -946,7 +946,7 @@ void GameContext::Shutdown() {
 }
 
 void GameContext::Render(const Camera& camera) {
-        VkResult res;
+        VkResult res{};
         res = vkWaitForFences(vulkan_device, 1, &fences[frame_index], true, u64_max);
 
         if (res != VK_SUCCESS) {
