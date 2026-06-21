@@ -274,6 +274,10 @@ void GameContext::Init() {
 
         // ===== Vulkan Logical Device =====
 
+        std::println("Graphics Queue: {}", graphics_queue_family);
+        std::println("Compute  Queue: {} ", compute_queue_family);
+        std::println("Transfer Queue: {}", transfer_queue_family);
+
         const float queue_priorities{ 1.0f };
 
         VkDeviceQueueCreateInfo graphics_queue_info{
@@ -936,7 +940,7 @@ void GameContext::Shutdown() {
         vkDestroySwapchainKHR(vulkan_device, vulkan_swapchain, nullptr);
         vkDestroySurfaceKHR(vulkan_instance, vulkan_surface, nullptr);
 
-        vmaDestroyAllocator(vulkan_allocator);
+        // vmaDestroyAllocator(vulkan_allocator);
         vkDestroyDevice(vulkan_device, nullptr);
         vkDestroyInstance(vulkan_instance, nullptr);
 
@@ -1184,7 +1188,7 @@ void GameContext::Render(const Camera& camera) {
         res = vkQueueSubmit(graphics_queue, 1, &submit_info, fences[frame_index]);
 
         if (res != VK_SUCCESS) {
-                std::println("Failed to submit queue");
+                std::println("Failed to submit queue: {}", (i32)res);
                 exit(res);
         }
 
@@ -1287,11 +1291,22 @@ void Game::Run() {
         u64  last_time{ SDL_GetTicks() };
         bool running = true;
 
+        u64 frame_count = 0;
+        float frame_time = 0;
+
         while (running) {
                 // ===== Delta Time ===== //
 
                 float delta_time = float(SDL_GetTicks() - last_time) / 1000.0f;
                 last_time        = SDL_GetTicks();
+
+                frame_time += delta_time;
+                frame_count++;
+                if (frame_time >= 1.0f) {
+                        std::println("FPS: {}", frame_count);
+                        frame_count = 0;
+                        frame_time -= 1.0f;
+                }
 
                 // ===== Input ===== //
 

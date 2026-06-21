@@ -4,7 +4,7 @@
 
 #include <SDL3/SDL.h>
 
-#include <iostream>
+#include <print>
 
 void InputSystem::Init(Window* _window) {
         window = _window;

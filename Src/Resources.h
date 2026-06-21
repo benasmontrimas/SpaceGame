@@ -2,7 +2,6 @@
 
 #include "Base.h"
 
-#include "vulkan/vulkan.h"
 #include <vma/vk_mem_alloc.h>
 
 struct GPUBuffer {
@@ -20,6 +19,8 @@ struct GPUBuffer {
         // 2 queue families waiting on the same semaphore, and im not sure how ordering works, if owning queue recieves it first
         // the queue transitions would be broken.
         VkSemaphore transfer_semaphore;
+
+        void Print();
 };
 
 constexpr VmaAllocationCreateFlags GPUBuffer_GPU_ONLY = VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT;
@@ -30,7 +31,8 @@ constexpr VmaAllocationCreateFlags GPUBuffer_READBACK = VMA_ALLOCATION_CREATE_HO
 
 [[nodiscard]]
 GPUBuffer CreateGPUBuffer(VkDevice vulkan_device, VmaAllocator allocator, u64 size, u32 owning_queue_family, VkBufferUsageFlags usage,
-                          VmaAllocationCreateFlags allocation_flags, VmaMemoryUsage memory_usage = VMA_MEMORY_USAGE_AUTO);
+                          VmaAllocationCreateFlags allocation_flags, VmaMemoryUsage memory_usage = VMA_MEMORY_USAGE_AUTO,
+                          VkMemoryPropertyFlags memory_flags = 0);
 [[nodiscard]]
 GPUBuffer CreateStagingBuffer(VkDevice vulkan_device, VmaAllocator allocator, u64 size, u32 owning_queue_family);
 [[nodiscard]]
@@ -44,7 +46,7 @@ void DestroyGPUBuffer(VkDevice vulkan_device, GPUBuffer& buffer, VmaAllocator al
 
 struct BufferOwnershipInfo {
         VkCommandBuffer       command_buffer;
-        GPUBuffer             buffer;
+        GPUBuffer*            buffer;
         u32                   old_queue_family;
         u32                   new_queue_family;
         VkPipelineStageFlags2 stage_mask;
@@ -85,11 +87,11 @@ struct BufferRegion {
 };
 
 struct GPUBufferCopyInfo {
-        GPUBuffer src;
-        GPUBuffer dst;
-        u64       src_offset;
-        u64       dst_offset;
-        u64       size;
+        GPUBuffer* src;
+        GPUBuffer* dst;
+        u64        src_offset;
+        u64        dst_offset;
+        u64        size;
 
         u32 src_queue_family;
         u32 dst_queue_family;
@@ -97,20 +99,20 @@ struct GPUBufferCopyInfo {
 
 // NOTE: Copy from staging buffer to dst when user checks if job finished!
 struct GPUBufferReadInfo {
-        GPUBuffer src;
-        u64       offset;
-        u64       size;
-        u8*       dst;
+        GPUBuffer* src;
+        u64        offset;
+        u64        size;
+        u8*        dst;
 
         u32          src_queue_family;
         BufferRegion staging_buffer_region;
 };
 
 struct GPUBufferWriteInfo {
-        u8*       src;
-        u64       offset;
-        u64       size;
-        GPUBuffer dst;
+        u8*        src;
+        u64        offset;
+        u64        size;
+        GPUBuffer* dst;
 
         u32          dst_queue_family;
         BufferRegion staging_buffer_region; // This doesnt really make sense here..

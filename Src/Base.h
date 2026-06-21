@@ -1,9 +1,10 @@
 #pragma once
 
-#include <algorithm>
 #include <cassert>
 #include <cstdint>
+#include <format>
 #include <numbers>
+#include <print>
 
 #define GLM_FORCE_RADIANS
 #define GLM_ENABLE_EXPERIMENTAL
@@ -46,6 +47,27 @@ using uVec4 = glm::uvec4;
 
 using Mat4 = glm::mat4;
 
+template <>
+struct std::formatter<Vec2> : std::formatter<std::string_view> {
+        auto format(const Vec2& v, std::format_context& ctx) const {
+                return std::format_to(ctx.out(), "({}, {})", v.x, v.y);
+        }
+};
+
+template <>
+struct std::formatter<Vec3> : std::formatter<std::string_view> {
+        auto format(const Vec3& v, std::format_context& ctx) const {
+                return std::format_to(ctx.out(), "({}, {}, {})", v.x, v.y, v.z);
+        }
+};
+
+template <>
+struct std::formatter<Vec4> : std::formatter<std::string_view> {
+        auto format(const Vec4& v, std::format_context& ctx) const {
+                return std::format_to(ctx.out(), "({}, {}, {}, {})", v.x, v.y, v.z, v.w);
+        }
+};
+
 // ===== Constants ===== //
 
 constexpr float  PI_F = std::numbers::pi_v<float>;
@@ -79,7 +101,7 @@ struct AABB {
 
         // Return the distance to the AABB
         float Distance(Vec3 p) {
-                float res {};
+                float res{};
 
                 Vec3 min = (center - radius);
                 Vec3 max = (center + radius);
@@ -94,7 +116,7 @@ struct AABB {
 
         // Return the distance to the AABB
         float DistanceSq(Vec3 p) {
-                float res {};
+                float res{};
 
                 Vec3 min = (center - radius);
                 Vec3 max = (center + radius);

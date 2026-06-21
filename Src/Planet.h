@@ -6,12 +6,8 @@
 #include "Model.h"
 #include "Resources.h"
 
-#include "slang/slang-com-ptr.h"
-#include "slang/slang.h"
 #include "volk/volk.h"
-#include "vulkan/vulkan.h"
 
-#include <print>
 #include <vector>
 
 
@@ -33,10 +29,10 @@ constexpr Vec3 PARENT_CENTER_OFFSET[NODE_CHILD_COUNT] = {
 
 constexpr u32   CHUNK_LOD_DISTANCE_COUNT                      = 6;
 constexpr float CHUNK_LOD_DISTANCES[CHUNK_LOD_DISTANCE_COUNT] = {
-        0, 64, 256, 1'024, 8'192, 65'536,
+        0, 64, 256, 256, 256, 256,
 };
 
-constexpr u32 MINIMUM_CHUNK_DIMS = 32;
+constexpr u32 MINIMUM_CHUNK_DIMS = 256;
 constexpr u32 PLANET_MAX_RADIUS  = 60'000;
 
 // Calculates the size the root of the chunk tree given a minimum chunk size.
@@ -160,11 +156,11 @@ struct PlanetChunkNode {
         }
 
         bool HasChildren() const {
-                return (first_child_index != NO_CHILDREN) or IsEmpty();
+                return (first_child_index != NO_CHILDREN) and !IsEmpty();
         }
 
         bool HasChunk() const {
-                return (chunk_index != NO_CHUNK);
+                return (chunk_index != NO_CHUNK and chunk_index != EMPTY_NODE);
         }
 };
 
@@ -196,11 +192,6 @@ struct PlanetChunkTree {
 
 // Struct passed to GPU for generating chunks.
 struct PlanetCreationInfo {
-        u32  seed;
-        Vec3 position;
-        u32  chunk_cells;
-        u32  chunk_dims;
-
         VkDeviceAddress edge_case_lookup;
         VkDeviceAddress triangle_lookup;
 
@@ -210,6 +201,13 @@ struct PlanetCreationInfo {
 
         VkDeviceAddress indices;
         VkDeviceAddress vertices;
+
+        u32 chunk_cells;
+        u32 chunk_dims;
+
+        Vec3 position;
+
+        u32 seed;
 };
 
 // Struct used to store edge sums for chunks.
@@ -230,20 +228,19 @@ struct PlanetChunkProgress {
         GPUBuffer edge_sums_buffer;
 
         VkSemaphore semaphore;
-        VkFence     fence; // Not used?
 
-        int command_buffer_index;
+        u32 command_buffer_index;
 };
 
 struct Planet {
         // ===== Constants ===== //
 
-        static constexpr u32 THREAD_GROUP_X        = 8;
-        static constexpr u32 THREAD_GROUP_Y        = 8;
+        static constexpr u32 THREAD_GROUP_X        = 64;
+        static constexpr u32 THREAD_GROUP_Y        = 1;
         static constexpr u32 THREAD_GROUP_Z        = 1;
-        static constexpr u32 COMMAND_BUFFER_COUNT  = 10;
+        static constexpr u32 COMMAND_BUFFER_COUNT  = 100;
         static constexpr u32 GENERATION_PASS_COUNT = 4;
-        static constexpr u32 CHUNK_CELLS           = 128;
+        static constexpr u32 CHUNK_CELLS           = 127;
 
         // ===== Members ===== //
 
@@ -278,8 +275,9 @@ struct Planet {
         void Shutdown();
         void Update();
 
-        int  GetCommandBufferIndex();
-        void ReleaseCommandBufferIndex(int index);
+        void UpdateStates();
+        u32  GetCommandBufferIndex();
+        void ReleaseCommandBufferIndex(u32 index);
 
         // TODO: I have changed these here -> Return EMPTY_NODE if empty! Oh wait we wont know yet!
         u32  GenerateChunk(AABB bounds, u32 lod_level);

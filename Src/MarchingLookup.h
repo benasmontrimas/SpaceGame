@@ -1,4 +1,4 @@
-// If you do the correct order for traingles, you can avoid this edge table completely?
+// If you do the correct order for triangles, you can avoid this edge table completely?
 // if the triangle_table followed the order of the edge table order.
 constexpr int edge_table[256]{
         0x0,    0x1'09, 0x2'03, 0x3'0a, 0x4'06, 0x5'0f, 0x6'05, 0x7'0c, 0x8'0c, 0x9'05, 0xa'0f, 0xb'06, 0xc'0a, 0xd'03, 0xe'09, 0xf'00, 0x1'90, 0x99,   0x3'93,

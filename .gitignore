@@ -11,3 +11,6 @@
 [Bb]in/
 **/cmake/**
 .idea/
+perf.data*
+flamegraph.svg
+VulkanLog.txt
