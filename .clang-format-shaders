@@ -110,7 +110,7 @@ BraceWrapping:
   SplitEmptyRecord: true
   SplitEmptyNamespace: true
 BreakAdjacentStringLiterals: true
-BreakAfterAttributes: Always
+BreakAfterAttributes: Leave
 BreakAfterJavaFieldAnnotations: true
 BreakAfterReturnType: None
 BreakArrays:     true
@@ -173,12 +173,12 @@ InsertBraces:    false
 InsertNewlineAtEOF: false
 InsertTrailingCommas: None
 IntegerLiteralSeparator:
-  Binary:          8
-  BinaryMinDigits: 8
-  Decimal:         3
+  Binary:          -1
+  BinaryMinDigits: 0
+  Decimal:         -1
   DecimalMinDigits: 0
-  Hex:             2
-  HexMinDigits:    2
+  Hex:             -1
+  HexMinDigits:    0
 JavaScriptQuotes: Leave
 JavaScriptWrapImports: true
 KeepEmptyLines:
@@ -271,12 +271,6 @@ Standard:        Latest
 TabWidth:        8
 UseTab:          Never
 VerilogBreakBetweenInstancePorts: true
-WhitespaceSensitiveMacros:
-  - BOOST_PP_STRINGIZE
-  - CF_SWIFT_NAME
-  - NS_SWIFT_NAME
-  - PP_STRINGIZE
-  - STRINGIZE
 WrapNamespaceBodyWithEmptyLines: Always
 BreakBeforeCloseBracketBracedList: true
 BreakBeforeCloseBracketFunction: true

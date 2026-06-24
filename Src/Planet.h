@@ -15,6 +15,8 @@
 // ===== Constants ===== //
 // ===================== //
 
+using NodeID  = u32;
+using ChunkID = u32;
 
 constexpr u32 NODE_CHILD_COUNT            = 8;
 constexpr u32 NO_CHILDREN                 = u32_max;
@@ -29,11 +31,12 @@ constexpr Vec3 PARENT_CENTER_OFFSET[NODE_CHILD_COUNT] = {
 
 constexpr u32   CHUNK_LOD_DISTANCE_COUNT                      = 6;
 constexpr float CHUNK_LOD_DISTANCES[CHUNK_LOD_DISTANCE_COUNT] = {
-        0, 64, 256, 256, 256, 256,
+        // 0, 32, 64, 128, 256, 1'024,
+        1, 1, 1, 1, 1, 1,
 };
 
-constexpr u32 MINIMUM_CHUNK_DIMS = 256;
-constexpr u32 PLANET_MAX_RADIUS  = 60'000;
+constexpr u32 MINIMUM_CHUNK_DIMS = 8;
+constexpr u32 PLANET_MAX_RADIUS  = 20'000;
 
 // Calculates the size the root of the chunk tree given a minimum chunk size.
 constexpr u32 GetTreeRootDiameter() {
@@ -97,13 +100,15 @@ enum class PlanetGenerationState : u32 {
         // ===== Generation Stages ===== //
 
         WaitingOnGeneration,
-        ProcessingStageOne,   // Pass 1 and 2
-        ProcessingStageTwo,   // Sum offsets
+        ProcessingStageOne, // Pass 1 and 2
+        ProcessingStageTwo, // Sum offsets
+        AllocateBuffers,
         ProcessingStageThree, // Pass 3 and 4
         FinishingProcessing,  // Return Chunk
 
         // ===== Destroy States ===== //
 
+        WaitingForRenderFinish,
         WaitingOnDestroy,
 
         // ===== Idle States ===== //
@@ -136,13 +141,13 @@ struct PlanetChunk {
 struct PlanetChunkNode {
         // ===== Properties Masks ===== //
 
-        static constexpr u32 parent_offset_mask = 0b111;
-        static constexpr u32 is_empty_mask      = 0b1000;
+        static constexpr u32 parent_offset_mask = 0B111;
+        static constexpr u32 is_empty_mask      = 0B1000;
 
         // ===== Members ===== //
 
-        u32 first_child_index;
-        u32 chunk_index;
+        NodeID  first_child_index;
+        ChunkID chunk_index;
 
         // ===== Functions ===== //
 
@@ -160,7 +165,7 @@ struct PlanetChunkNode {
         }
 
         bool HasChunk() const {
-                return (chunk_index != NO_CHUNK and chunk_index != EMPTY_NODE);
+                return (chunk_index != NO_CHUNK and !IsEmpty());
         }
 };
 
@@ -168,9 +173,9 @@ struct PlanetChunkNode {
 struct PlanetChunkTree {
         Planet*                      planet;
         AABB                         root;
-        std::vector<u32>             parent_indices;
+        std::vector<NodeID>          parent_indices;
         std::vector<PlanetChunkNode> nodes;
-        u32                          next_free_index;
+        NodeID                       next_free_index;
 
         // ===== Function ===== //
 
@@ -178,14 +183,14 @@ struct PlanetChunkTree {
         void Update();
         void Shutdown();
 
-        void Traverse(u32 node_index, AABB bounds, u32 lod_level);
-        u32  AssignChildren(u32 parent_index);
-        void RemoveChildren(u32 parent_index);
-        void ResetNode(u32 node_index);
-        void DirtyNode(u32 node_index);
+        void   Traverse(NodeID node_index, AABB bounds, u32 lod_level);
+        NodeID AssignChildren(NodeID parent_index);
+        void   RemoveChildren(NodeID parent_index);
+        void   ResetNode(NodeID node_index);
+        void   DirtyNode(NodeID node_index);
 
-        u32 GetParentIndex(u32 node_index) {
-                u32 parent_index = parent_indices[node_index / 8];
+        NodeID GetParentIndex(NodeID node_index) {
+                NodeID parent_index = parent_indices[node_index / 8];
                 return parent_index;
         }
 };
@@ -196,7 +201,7 @@ struct PlanetCreationInfo {
         VkDeviceAddress triangle_lookup;
 
         VkDeviceAddress edges;
-        VkDeviceAddress edge_sums;
+        VkDeviceAddress cell_sums;
         VkDeviceAddress triangle_normals;
 
         VkDeviceAddress indices;
@@ -225,7 +230,7 @@ struct PlanetChunkProgress {
         PlanetCreationInfo info;
 
         GPUBuffer edge_buffer;
-        GPUBuffer edge_sums_buffer;
+        GPUBuffer cell_sums_buffer;
 
         VkSemaphore semaphore;
 
@@ -239,7 +244,7 @@ struct Planet {
         static constexpr u32 THREAD_GROUP_Y        = 1;
         static constexpr u32 THREAD_GROUP_Z        = 1;
         static constexpr u32 COMMAND_BUFFER_COUNT  = 100;
-        static constexpr u32 GENERATION_PASS_COUNT = 4;
+        static constexpr u32 GENERATION_PASS_COUNT = 5;
         static constexpr u32 CHUNK_CELLS           = 127;
 
         // ===== Members ===== //
@@ -261,9 +266,9 @@ struct Planet {
         u32                      next_free_chunk;
 
         std::vector<PlanetChunkProgress> chunks_in_progress;
-        std::vector<u32>                 chunks_to_render;
-        std::vector<u32>                 chunks_to_destroy;
-        u32                              destroy_count;
+        std::vector<ChunkID>             chunks_to_render;
+        std::vector<ChunkID>             chunks_to_destroy;
+        ChunkID                          destroy_count;
 
         PlanetChunkTree tree;
 
@@ -275,17 +280,18 @@ struct Planet {
         void Shutdown();
         void Update();
 
-        void UpdateStates();
-        u32  GetCommandBufferIndex();
-        void ReleaseCommandBufferIndex(u32 index);
+        void    UpdateStates();
+        ChunkID GetCommandBufferIndex();
+        void    ReleaseCommandBufferIndex(ChunkID index);
 
         // TODO: I have changed these here -> Return EMPTY_NODE if empty! Oh wait we wont know yet!
-        u32  GenerateChunk(AABB bounds, u32 lod_level);
-        void DestroyChunk(u32 chunk_index);
+        ChunkID GenerateChunk(AABB bounds, ChunkID lod_level);
+        void    DestroyChunk(ChunkID chunk_index);
 
         void FreeChunkInProgress(PlanetChunkProgress& chunk_progress);
 
-        VkSubmitInfo2 RecordStageOne(PlanetChunkProgress& chunk_progress);
-        void          StartStageTwo(PlanetChunkProgress& chunk_progress);
-        VkSubmitInfo2 RecordStageThree(PlanetChunkProgress& chunk_progress);
+        void RecordStageOne(PlanetChunkProgress& chunk_progress);
+        void StartStageTwo(PlanetChunkProgress& chunk_progress);
+        void AllocateBuffers(PlanetChunkProgress& chunk_progress);
+        void RecordStageThree(PlanetChunkProgress& chunk_progress);
 };

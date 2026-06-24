@@ -395,7 +395,7 @@ void GameContext::Init() {
         // ===== Swapchain =====
 
         VkExtent2D swapchain_extent{ surface_capabilities.currentExtent };
-        if (surface_capabilities.currentExtent.width == 0xFF'FF'FF'FF) { // This is a wayland thing?
+        if (surface_capabilities.currentExtent.width == 0Xff'ff'ff'ff) { // This is a wayland thing?
                 swapchain_extent = { .width = u32(window.width), .height = u32(window.height) };
         }
 
@@ -797,6 +797,9 @@ void GameContext::Init() {
 
         VkPipelineRasterizationStateCreateInfo rasterization_state{
                 .sType     = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
+                .polygonMode = VK_POLYGON_MODE_LINE,
+                // .cullMode  = VK_CULL_MODE_BACK_BIT,
+                .frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE,
                 .lineWidth = 1.0f,
         };
 
@@ -812,7 +815,7 @@ void GameContext::Init() {
                 .depthCompareOp   = VK_COMPARE_OP_LESS_OR_EQUAL,
         };
 
-        VkPipelineColorBlendAttachmentState blend_attachment{ .colorWriteMask = 0xF };
+        VkPipelineColorBlendAttachmentState blend_attachment{ .colorWriteMask = 0Xf };
         VkPipelineColorBlendStateCreateInfo blend_state{
                 .sType           = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
                 .attachmentCount = 1,
@@ -889,10 +892,10 @@ void GameContext::Shutdown() {
 
         // ===== Destroy Models ===== //
 
-        for (u64 i = 0; i < models.size(); i++) {
-                Model& model = models[i];
-                model.Destroy(*this);
-        }
+        // for (u64 i = 0; i < models.size(); i++) {
+        //         Model& model = models[i];
+        //         model.Destroy(*this);
+        // }
 
         // ===== Input ===== //
 
@@ -1123,13 +1126,16 @@ void GameContext::Render(const Camera& camera) {
                 shader_draw_data.model = glm::translate(Mat4(1.0f), model.transform.position);
                 shader_draw_data.model = glm::scale(shader_draw_data.model, model.transform.scale);
 
+                shader_draw_data.material_id = model.material_id;
+
                 u64 draw_data_offset = sizeof(ShaderDrawData) * i;
                 memcpy((u8*)draw_data[frame_index].allocation_info.pMappedData + draw_data_offset, &shader_draw_data, sizeof(ShaderDrawData));
 
                 VkDeviceSize vertex_offset{ 0 };
                 vkCmdBindVertexBuffers(command_buffer, 0, 1, &model.meshes[0].buffer.buffer, &vertex_offset);
 
-                vkCmdBindIndexBuffer(command_buffer, model.meshes[0].buffer.buffer, model.meshes[0].vertices_size, VK_INDEX_TYPE_UINT32);
+                u32 index_offset = model.meshes[0].vertices_size;
+                vkCmdBindIndexBuffer(command_buffer, model.meshes[0].buffer.buffer, index_offset, VK_INDEX_TYPE_UINT32);
 
                 // I can just store a vector for each frame and clear when its finished, push back, pass pointer, and use other next vector next frame.
                 u64 device_address = draw_data[frame_index].device_address + draw_data_offset;
@@ -1251,6 +1257,9 @@ void Game::Init() {
         {
                 Model model;
                 model.LoadFromOBJ(game_context, "Assets/Models/SkySphere.obj");
+                // model.LoadFromOBJ(game_context, "Assets/Models/test.obj");
+                model.material_id = MaterialID::SkyMap;
+                model.transform.scale = Vec3(100, 100, 100);
                 game_context.models.push_back(model);
         }
 
@@ -1258,6 +1267,7 @@ void Game::Init() {
         {
                 Model model;
                 model.LoadFromOBJ(game_context, "Assets/Models/test.obj");
+                model.material_id = MaterialID::Basic;
                 game_context.models.push_back(model);
         }
 
@@ -1270,6 +1280,9 @@ void Game::Init() {
 
 void Game::Shutdown() {
         vkDeviceWaitIdle(game_context.vulkan_device);
+
+        game_context.models[0].Destroy(game_context);
+        game_context.models[1].Destroy(game_context);
 
         skymap.Destroy(game_context);
         planet.Shutdown();
@@ -1291,8 +1304,8 @@ void Game::Run() {
         u64  last_time{ SDL_GetTicks() };
         bool running = true;
 
-        u64 frame_count = 0;
-        float frame_time = 0;
+        u64   frame_count = 0;
+        float frame_time  = 0;
 
         while (running) {
                 // ===== Delta Time ===== //
@@ -1314,7 +1327,14 @@ void Game::Run() {
 
                 // ===== Gameplay Update ===== //
 
+                game_context.models.resize(2);
+                game_context.models.reserve(planet.chunks_to_render.size() + 2);
+
                 Update(delta_time);
+                for (u32 i = 0; i < planet.chunks_to_render.size(); i++) {
+                        game_context.models.push_back(planet.chunks[planet.chunks_to_render[i]].model);
+                        planet.chunks[planet.chunks_to_render[i]].model.last_frame_rendered = game_context.GetLastFinishedFrame() + 1;
+                }
 
                 // ===== Render ===== //
 

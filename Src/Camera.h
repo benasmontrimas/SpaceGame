@@ -9,7 +9,7 @@
 
 // Then just store an array of children so that we can have objects relative to other objects
 struct GameObject {
-        Vec3 position{ 0, 0, -10 };
+        Vec3 position{ 0, 0, 0 };
         Vec3 rotation;
         Vec3 scale;
 
@@ -19,12 +19,12 @@ struct GameObject {
 };
 
 struct Camera {
-        GameObject game_object;
+        GameObject game_object{ .position = { 0, 0, -1'050 } };
 
         float fov{ 60.0f };
         float aspect_ratio{ 1.0f };
         float near{ 0.1f };
-        float far{ 5'000.0f };
+        float far{ 20'000.0f };
 
         void Update(GameContext& game_context);
 
@@ -44,7 +44,7 @@ struct DefaultController {
         Action* up_action;
         Action* down_action;
 
-        float movement_speed{ 10 };
+        float movement_speed{ 1'000 };
 
         GameContext* game_context;
         GameObject*  owner;

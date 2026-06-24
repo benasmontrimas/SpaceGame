@@ -20,6 +20,10 @@ struct GPUBuffer {
         // the queue transitions would be broken.
         VkSemaphore transfer_semaphore;
 
+        bool IsValid() {
+                return buffer != VK_NULL_HANDLE;
+        }
+
         void Print();
 };
 

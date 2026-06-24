@@ -15,6 +15,12 @@ void GPUBuffer::Print() {
         std::println("    Queue Family  = {}", (u64)owning_queue_family);
 }
 
+// ===== DEBUG ===== //
+
+u64 BUFFER_ALLOCATION_COUNT = 0;
+u64 BUFFER_FREE_COUNT       = 0;
+u64 BUFFER_ALLOCATION_MEM   = 0;
+
 GPUBuffer CreateGPUBuffer(VkDevice vulkan_device, VmaAllocator allocator, u64 size, u32 owning_queue_family, VkBufferUsageFlags usage,
                           VmaAllocationCreateFlags allocation_flags, VmaMemoryUsage memory_usage, VkMemoryPropertyFlags memory_flags) {
         VkBufferCreateInfo buffer_info{
@@ -34,15 +40,24 @@ GPUBuffer CreateGPUBuffer(VkDevice vulkan_device, VmaAllocator allocator, u64 si
         VkResult res = vmaCreateBuffer(allocator, &buffer_info, &buffer_allocation_info, &buffer.buffer, &buffer.allocation, &buffer.allocation_info);
 
         if (res != VK_SUCCESS) {
-                std::println("Failed creating buffer");
+                std::println("Failed creating buffer: {}", (i32)res);
                 exit(res);
         }
 
         buffer.owning_queue_family = owning_queue_family;
 
         VkSemaphoreCreateInfo semaphore_info{ .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO };
-        vkCreateSemaphore(vulkan_device, &semaphore_info, nullptr, &buffer.ownership_semaphore);
-        vkCreateSemaphore(vulkan_device, &semaphore_info, nullptr, &buffer.transfer_semaphore);
+        res = vkCreateSemaphore(vulkan_device, &semaphore_info, nullptr, &buffer.ownership_semaphore);
+        if (res < 0) {
+                std::println("Sem Failed: {}", (u32)res);
+                exit(1);
+        }
+
+        res = vkCreateSemaphore(vulkan_device, &semaphore_info, nullptr, &buffer.transfer_semaphore);
+        if (res < 0) {
+                std::println("Sem Failed: {}", (u32)res);
+                exit(1);
+        }
 
         if ((usage & VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT) == VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT) {
                 VkBufferDeviceAddressInfo buffer_address_info{
@@ -53,6 +68,12 @@ GPUBuffer CreateGPUBuffer(VkDevice vulkan_device, VmaAllocator allocator, u64 si
                 buffer.device_address = vkGetBufferDeviceAddress(vulkan_device, &buffer_address_info);
         }
 
+        BUFFER_ALLOCATION_MEM += (u64)buffer.allocation_info.size;
+        BUFFER_ALLOCATION_COUNT++;
+        std::println("Buffer Allocation: {}, Allocations: {}, Frees: {}", BUFFER_ALLOCATION_MEM, BUFFER_ALLOCATION_COUNT, BUFFER_FREE_COUNT);
+
+        if (BUFFER_ALLOCATION_MEM > 4'000'000'000) exit(100);
+
         return buffer;
 }
 
@@ -60,6 +81,10 @@ void DestroyGPUBuffer(VkDevice vulkan_device, GPUBuffer& buffer, VmaAllocator vu
         vmaDestroyBuffer(vulkan_allocator, buffer.buffer, buffer.allocation);
         vkDestroySemaphore(vulkan_device, buffer.ownership_semaphore, nullptr);
         vkDestroySemaphore(vulkan_device, buffer.transfer_semaphore, nullptr);
+
+        BUFFER_ALLOCATION_MEM -= (u64)buffer.allocation_info.size;
+        BUFFER_FREE_COUNT++;
+        std::println("Buffer Allocation: {}, Allocations: {}, Frees: {}", BUFFER_ALLOCATION_MEM, BUFFER_ALLOCATION_COUNT, BUFFER_FREE_COUNT);
 
         // Zero out memory so we dont store old refs.
         memset(&buffer, 0, sizeof(GPUBuffer));

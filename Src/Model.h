@@ -11,12 +11,20 @@
 
 struct GameContext;
 
+enum class MaterialID : u32 {
+        None = 0,
+
+        SkyMap = 1,
+        Basic = 2,
+        Planet = 3,
+
+        Count,
+};
+
 struct Vertex {
-        Vec3  position;
-        float p1;
-        Vec3  normal;
-        float p2;
-        Vec2  uv;
+        Vec3 position;
+        Vec3 normal;
+        Vec2 uv;
 };
 
 // For intermediate data. Hold here for writting to gpu.
@@ -44,6 +52,8 @@ struct Model {
 
         std::vector<Mesh> meshes;
         Transform         transform;
+
+        MaterialID material_id;
 
         u32 last_frame_rendered;
 };

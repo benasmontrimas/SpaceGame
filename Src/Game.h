@@ -29,7 +29,9 @@ struct ShaderDrawData {
         Mat4 view;
         Mat4 model;
 
-        Mat4 padding;
+        MaterialID material_id;
+
+        u8 padding[60];
 };
 
 // NOTE: Can I split out core stuff into a GameContext struct so that I can pass that around to systems and have gameplay in Game.
@@ -45,7 +47,7 @@ struct GameContext {
         // ====== //
 
         static constexpr u32 max_frames_in_flight{ 2 };
-        static constexpr u32 max_draw_count{ 1'000 };
+        static constexpr u32 max_draw_count{ 10'000 };
 
         // ====== //
 
@@ -132,9 +134,6 @@ struct GameContext {
         // ===== Input ===== //
 
         InputSystem input_system;
-
-        // ===== REPLACE BELOW ===== //
-        Vec3 camera_position{ 0, 0, -10.0f };
 
         // ===== Functions ===== //
 
