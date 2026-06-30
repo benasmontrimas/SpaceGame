@@ -16,3 +16,4 @@ flamegraph.svg
 VulkanLog.txt
 *.ktx
 *.png
+*.exr
