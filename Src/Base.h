@@ -7,12 +7,14 @@
 #include <print>
 
 #define GLM_FORCE_RADIANS
-#define GLM_ENABLE_EXPERIMENTAL
+#define GLM_FORCE_LEFT_HANDED
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
+#define GLM_ENABLE_EXPERIMENTAL
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/quaternion.hpp>
 #include <glm/gtx/norm.hpp>
+#include <glm/gtx/quaternion.hpp>
 #include <glm/gtx/rotate_vector.hpp>
 
 // ===== Sized Ints ===== //
@@ -46,6 +48,8 @@ using uVec3 = glm::uvec3;
 using uVec4 = glm::uvec4;
 
 using Mat4 = glm::mat4;
+
+using Quat = glm::quat;
 
 template <>
 struct std::formatter<Vec2> : std::formatter<std::string_view> {

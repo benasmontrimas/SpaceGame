@@ -12,7 +12,43 @@
 
 #include <print>
 
-void Model::LoadFromOBJ(GameContext& game_context, const std::string& file_name) {
+void Model::Init(GameContext& game_context, VertexDrawData* vertices, u64 vertex_count, u32* indices, u64 index_count, u32 _max_instance_count) {
+        assert(meshes.size() == 0 and "Initialising a model which is already initialised");
+
+        Mesh mesh{};
+
+        // ===== Allocate Buffer ===== //
+
+        VkDeviceSize vertex_buffer_size = sizeof(VertexDrawData) * vertex_count;
+        VkDeviceSize index_buffer_size  = sizeof(u32) * index_count;
+        VkDeviceSize buffer_size        = vertex_buffer_size + index_buffer_size;
+
+        VmaAllocationCreateFlags allocation_flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT;
+
+        mesh.buffer = CreateGPUBuffer(game_context.vulkan_device, game_context.vulkan_allocator, buffer_size, game_context.graphics_queue_family,
+                                      VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT, allocation_flags);
+
+        // ===== Copy Vertex and Index Data ===== //
+
+        memcpy(mesh.buffer.allocation_info.pMappedData, vertices, vertex_buffer_size);
+        memcpy(((char*)mesh.buffer.allocation_info.pMappedData) + vertex_buffer_size, indices, index_buffer_size);
+
+        mesh.index_count   = index_count;
+        mesh.vertices_size = (u64)vertex_buffer_size;
+
+        meshes.push_back(mesh);
+
+        // ===== Allocate Instance Buffer ===== //
+
+        max_instance_count = _max_instance_count;
+
+        u64 instance_buffer_size = sizeof(InstanceDrawData) * max_instance_count * max_frames_in_flight;
+
+        instance_buffer = CreateGPUBuffer(game_context.vulkan_device, game_context.vulkan_allocator, instance_buffer_size, game_context.graphics_queue_family,
+                                          VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, allocation_flags);
+}
+
+void Model::LoadFromOBJ(GameContext& game_context, const std::string& file_name, u32 _max_instance_count) {
         tinyobj::attrib_t                attrib;
         std::vector<tinyobj::shape_t>    shapes;
         std::vector<tinyobj::material_t> materials;
@@ -27,13 +63,14 @@ void Model::LoadFromOBJ(GameContext& game_context, const std::string& file_name)
         std::println("Loaded model: {}, with {} meshes", file_name, shapes.size());
 
         for (size_t mesh_index = 0; mesh_index < shapes.size(); mesh_index++) {
-                MeshData mesh_data;
+                std::vector<VertexDrawData> vertices;
+                std::vector<u32>    indices;
 
-                mesh_data.vertices.reserve(shapes[mesh_index].mesh.indices.size());
-                mesh_data.indices.reserve(shapes[mesh_index].mesh.indices.size());
+                vertices.reserve(shapes[mesh_index].mesh.indices.size());
+                indices.reserve(shapes[mesh_index].mesh.indices.size());
 
                 for (tinyobj::index_t& index : shapes[mesh_index].mesh.indices) {
-                        Vertex v{};
+                        VertexDrawData v{};
 
                         if (attrib.vertices.size() > 0) {
                                 v.position = { attrib.vertices[index.vertex_index * 3 + 0], -attrib.vertices[index.vertex_index * 3 + 1],
@@ -49,8 +86,8 @@ void Model::LoadFromOBJ(GameContext& game_context, const std::string& file_name)
                                 v.uv = { attrib.texcoords[index.texcoord_index * 2 + 0], 1.0 - attrib.texcoords[index.texcoord_index * 2 + 1] };
                         }
 
-                        mesh_data.vertices.push_back(v);
-                        mesh_data.indices.push_back((u32)mesh_data.indices.size());
+                        vertices.push_back(v);
+                        indices.push_back((u32)indices.size());
                 }
 
                 // ===== Create Mesh ===== //
@@ -59,8 +96,8 @@ void Model::LoadFromOBJ(GameContext& game_context, const std::string& file_name)
 
                 // ===== Allocate Vertex and Index Buffer ===== //
 
-                VkDeviceSize vertex_buffer_size{ sizeof(Vertex) * mesh_data.vertices.size() };
-                VkDeviceSize index_buffer_size{ sizeof(u32) * mesh_data.indices.size() };
+                VkDeviceSize vertex_buffer_size{ sizeof(VertexDrawData) * vertices.size() };
+                VkDeviceSize index_buffer_size{ sizeof(u32) * indices.size() };
                 VkDeviceSize buffer_size{ vertex_buffer_size + index_buffer_size };
 
                 VmaAllocationCreateFlags allocation_flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
@@ -71,20 +108,33 @@ void Model::LoadFromOBJ(GameContext& game_context, const std::string& file_name)
 
                 // ===== Copy Vertex and Index Data ===== //
 
-                memcpy(mesh.buffer.allocation_info.pMappedData, mesh_data.vertices.data(), vertex_buffer_size);
-                memcpy(((char*)mesh.buffer.allocation_info.pMappedData) + vertex_buffer_size, mesh_data.indices.data(), index_buffer_size);
+                memcpy(mesh.buffer.allocation_info.pMappedData, vertices.data(), vertex_buffer_size);
+                memcpy(((char*)mesh.buffer.allocation_info.pMappedData) + vertex_buffer_size, indices.data(), index_buffer_size);
 
-                mesh.index_count   = (u64)mesh_data.indices.size();
+                mesh.index_count   = (u64)indices.size();
                 mesh.vertices_size = (u64)vertex_buffer_size;
 
                 meshes.push_back(mesh);
         }
+
+        // ===== Allocate Instance Buffer ===== //
+
+        VmaAllocationCreateFlags allocation_flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT;
+
+        max_instance_count = _max_instance_count;
+
+        u64 instance_buffer_size = sizeof(InstanceDrawData) * max_instance_count * max_frames_in_flight;
+
+        instance_buffer = CreateGPUBuffer(game_context.vulkan_device, game_context.vulkan_allocator, instance_buffer_size, game_context.graphics_queue_family,
+                                          VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, allocation_flags);
 }
 
 void Model::Destroy(GameContext& game_context) {
         for (auto& mesh : meshes) {
                 DestroyGPUBuffer(game_context.vulkan_device, mesh.buffer, game_context.vulkan_allocator);
         }
+
+        DestroyGPUBuffer(game_context.vulkan_device, instance_buffer, game_context.vulkan_allocator);
 }
 
 void Texture::Load(VkDevice device, VkCommandPool command_pool, VkQueue queue, const std::string& file_name, const VmaAllocator& allocator) {
@@ -341,4 +391,188 @@ void Texture::Destroy(GameContext& game_context) {
 
         // Destroy Image
         vmaDestroyImage(game_context.vulkan_allocator, image, allocation);
+}
+
+// ===== TEXT RENDERING ===== //
+
+void TextSystem::Init(GameContext& game_context) {
+        // ===== Initialise Letter Quad ===== //
+
+        constexpr u32 index_count  = 6;
+        constexpr u32 vertex_count = 4;
+
+        // Counter clock wise
+        Vec3 normal{ 0.0f, 0.0f, -1.0f };
+
+        constexpr float texture_row_size   = 512.0f;
+        constexpr float letter_row_size    = 64.0f;
+        constexpr float letters_in_row     = texture_row_size / letter_row_size;
+        constexpr float texture_coord_size = 1 / letters_in_row;
+
+        // bottom left
+        VertexDrawData v0{
+                .position = { 0.0f, 0.0f, 0.0f },
+                .normal   = normal,
+                .uv       = { 0.0f, 0.0f },
+        };
+
+        // bottom right
+        VertexDrawData v1 {
+                .position = { 1.0f, 0.0f, 0.0f }, .normal = normal,
+                .uv = {
+                        texture_coord_size,
+                        0.0,
+                },
+        };
+
+        // top right
+        VertexDrawData v2{
+                .position = { 1.0f, 1.0f, 0.0f },
+                .normal   = normal,
+                .uv       = { texture_coord_size, texture_coord_size },
+        };
+
+        // top left
+        VertexDrawData v3{
+                .position = { 0.0f, 1.0f, 0.0f },
+                .normal   = normal,
+                .uv       = { 0.0f, texture_coord_size },
+        };
+
+        VertexDrawData vertices[vertex_count] = { v0, v1, v2, v3 };
+        u32    indices[index_count]   = { 0, 1, 2, 0, 2, 3 };
+
+        model.Init(game_context, &vertices[0], vertex_count, &indices[0], index_count, 100'000);
+
+        // ===== Initialise Instance Buffer ===== //
+
+        // constexpr u64 buffer_size = frame_buffer_size * max_frames_in_flight;
+
+        // VmaAllocationCreateFlags allocation_flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT;
+
+        // instance_data = CreateGPUBuffer(game_context.vulkan_device, game_context.vulkan_allocator, buffer_size, game_context.graphics_queue_family,
+        //                                 VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT, allocation_flags);
+
+        // ===== Initialise Next Frame Data Array ===== //
+
+        // next_frame_draw_data = (InstanceDrawData*)malloc(frame_buffer_size);
+
+        // ===== Initialise Letter Count ===== //
+
+        letter_count = 0;
+}
+
+// Maybe just collect and write when we render. Easier to track as well.
+void TextSystem::AddText(Transform* text_data, u32 text_letter_count) {
+        model.instances.resize(letter_count + text_letter_count);
+
+        u64 write_offset = letter_count * sizeof(Transform);
+        u64 write_size   = text_letter_count * sizeof(Transform);
+        memcpy((&model.instances[letter_count]), text_data, write_size);
+
+        letter_count += text_letter_count;
+}
+
+void TextSystem::Draw(VkCommandBuffer command_buffer) {
+        if (letter_count == 0) return;
+
+        // ===== Write Data ===== //
+
+        // Ideally use transfer queue to transfer next_frame_draw_data to instance_buffer at offset
+        u64 write_offset = frame_index * frame_buffer_size;
+        u64 write_size   = letter_count * sizeof(InstanceDrawData);
+        memcpy(((u8*)instance_data.allocation_info.pMappedData) + write_offset, next_frame_draw_data, write_size);
+
+        // ===== Vulkan Draw Command ===== //
+
+        VkDeviceSize vertex_offset[2] = { 0, 0 };
+        VkBuffer     buffers[2]       = { model.meshes[0].buffer.buffer, model.instance_buffer.buffer };
+        vkCmdBindVertexBuffers(command_buffer, 0, 1, &buffers[0], &vertex_offset[0]);
+
+        u32 index_offset = model.meshes[0].vertices_size;
+        vkCmdBindIndexBuffer(command_buffer, model.meshes[0].buffer.buffer, index_offset, VK_INDEX_TYPE_UINT32);
+
+        vkCmdDrawIndexed(command_buffer, (u32)model.meshes[0].index_count, letter_count, 0, 0, 0);
+
+        // ===== Reset for next frame ===== //
+
+        letter_count = 0;
+        frame_index  = (frame_index + 1) % max_frames_in_flight;
+}
+
+void RenderedText::SetText(const std::string& new_text) {
+        text         = new_text;
+        u32 text_len = text.length();
+
+        letter_data.clear();
+        letter_data.reserve(text_len); // Might not need all that space
+
+        float x_offset = 0;
+        float y_offset = 0;
+
+        constexpr float space_offset = 32.0f;
+
+        for (u32 i = 0; i < text_len; i++) {
+                char letter = text[i];
+
+                if (letter >= 'a' and letter <= 'z') letter += 'A' - 'a';
+
+                if (letter >= 'A' and letter <= 'Z') {
+                        // TODO: Get actual offset - FreeType Library
+                        Transform2D transform{};
+
+                        transform.position = { x_offset, y_offset };
+                        x_offset += 64;
+
+                        letter_data.emplace_back(letter, transform, default_colour);
+                } else {
+                        switch (letter) {
+                                case ' ':
+                                        x_offset += space_offset;
+                                        break;
+                                case '\n':
+                                        x_offset = 0;
+                                        y_offset += 64;
+                                        break;
+                                case '\t':
+                                        x_offset += 4 * space_offset;
+                                        break;
+
+                                default:
+                                        std::println("[WARN] Character is not supported, skipping: {}", letter);
+                        }
+                }
+        }
+}
+
+void RenderedText::Draw(TextSystem& text_system) {
+        std::vector<Transform> letter_draw_data;
+        letter_draw_data.resize(letter_data.size());
+
+        // NOTE: No rotation yet
+        Mat4 text_mat = glm::translate(Mat4(1.0f), transform.position);
+        text_mat      = glm::scale(text_mat, transform.scale);
+
+        for (u32 i = 0; i < letter_data.size(); i++) {
+                Vec3 position = {
+                        transform.position.x + letter_data[i].transform.position.x,
+                        transform.position.y + letter_data[i].transform.position.y,
+                        transform.position.z,
+                };
+
+                Vec3 scale = {
+                        transform.scale.x + letter_data[i].transform.scale.x,
+                        transform.scale.y + letter_data[i].transform.scale.y,
+                        transform.scale.z,
+                };
+
+                Mat4 letter_mat = glm::translate(Mat4(1.0f), position);
+                letter_mat      = glm::scale(letter_mat, scale);
+
+                letter_draw_data[i].position = position;
+                letter_draw_data[i].rotation = Quat{};
+                letter_draw_data[i].scale    = scale;
+        }
+
+        text_system.AddText(letter_draw_data.data(), letter_draw_data.size());
 }

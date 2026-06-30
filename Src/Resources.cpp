@@ -70,9 +70,13 @@ GPUBuffer CreateGPUBuffer(VkDevice vulkan_device, VmaAllocator allocator, u64 si
 
         BUFFER_ALLOCATION_MEM += (u64)buffer.allocation_info.size;
         BUFFER_ALLOCATION_COUNT++;
-        std::println("Buffer Allocation: {}, Allocations: {}, Frees: {}", BUFFER_ALLOCATION_MEM, BUFFER_ALLOCATION_COUNT, BUFFER_FREE_COUNT);
+        // if (BUFFER_ALLOCATION_COUNT % 100 == 0)std::println("Buffer Allocation: {}, Allocations: {}, Frees: {}, Diff: {}", BUFFER_ALLOCATION_MEM,
+        // BUFFER_ALLOCATION_COUNT, BUFFER_FREE_COUNT, BUFFER_ALLOCATION_COUNT - BUFFER_FREE_COUNT);
 
-        if (BUFFER_ALLOCATION_MEM > 4'000'000'000) exit(100);
+        if (BUFFER_ALLOCATION_MEM > 4'000'000'000) {
+                std::println("Hit 4GB memory cap for buffers");
+                exit(100);
+        }
 
         return buffer;
 }
@@ -84,7 +88,8 @@ void DestroyGPUBuffer(VkDevice vulkan_device, GPUBuffer& buffer, VmaAllocator vu
 
         BUFFER_ALLOCATION_MEM -= (u64)buffer.allocation_info.size;
         BUFFER_FREE_COUNT++;
-        std::println("Buffer Allocation: {}, Allocations: {}, Frees: {}", BUFFER_ALLOCATION_MEM, BUFFER_ALLOCATION_COUNT, BUFFER_FREE_COUNT);
+        // std::println("Buffer Allocation: {}, Allocations: {}, Frees: {}, Diff: {}", BUFFER_ALLOCATION_MEM, BUFFER_ALLOCATION_COUNT, BUFFER_FREE_COUNT,
+        // BUFFER_ALLOCATION_COUNT - BUFFER_FREE_COUNT);
 
         // Zero out memory so we dont store old refs.
         memset(&buffer, 0, sizeof(GPUBuffer));
@@ -321,15 +326,11 @@ void CmdReleaseBufferOwnership(BufferOwnershipInfo& info) {
         };
 
         vkCmdPipelineBarrier2(info.command_buffer, &release_dependency_info);
-
-        info.buffer->owning_queue_family = u32_max; // Not owned by anyone right now
 }
 
 void CmdAcquireBufferOwnership(BufferOwnershipInfo& info) {
         VkBufferMemoryBarrier2 acquire_barrier{
                 .sType               = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2,
-                .srcStageMask        = VK_PIPELINE_STAGE_2_NONE, // Unused
-                .srcAccessMask       = VK_ACCESS_NONE,           // Unused
                 .dstStageMask        = info.stage_mask,
                 .dstAccessMask       = info.access_mask,
                 .srcQueueFamilyIndex = info.old_queue_family,
@@ -346,8 +347,6 @@ void CmdAcquireBufferOwnership(BufferOwnershipInfo& info) {
         };
 
         vkCmdPipelineBarrier2(info.command_buffer, &acquire_dependency_info);
-
-        info.buffer->owning_queue_family = info.new_queue_family;
 }
 
 BufferRegion TransferEngine::GetStagingBufferRegion(u64 size) {

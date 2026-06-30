@@ -11,52 +11,149 @@
 
 struct GameContext;
 
+using TextureID = u32;
+using ModelID = u32;
+
+// ===================== //
+// ===== MATERIALS ===== //
+// ===================== //
+
 enum class MaterialID : u32 {
         None = 0,
 
         SkyMap = 1,
-        Basic = 2,
+        Basic  = 2,
         Planet = 3,
+        Text   = 4,
 
         Count,
 };
 
-struct Vertex {
+struct MaterialBase {
+        TextureID textures_ids[4];
+};
+
+struct MaterialSkyMap {
+        TextureID texture_id;
+};
+
+struct Material {
+        MaterialID type;
+
+        union {
+                MaterialBase   base;
+                MaterialSkyMap skymap;
+        };
+
+        void* Data() const {
+                return (void*)&base;
+        }
+
+        u64 DataSize() const {
+                return sizeof(MaterialBase);
+        }
+};
+
+// ===================== //
+// ===== DRAW DATA ===== //
+// ===================== //
+
+struct FrameDrawData {
+        Mat4 projection_matrix;
+        Mat4 view_matrix;
+};
+
+struct MeshDrawData {
+        Material material;
+};
+
+struct InstanceDrawData {
+        Mat4 model_matrix;
+        u32  user_value;
+};
+
+struct VertexDrawData {
         Vec3 position;
         Vec3 normal;
         Vec2 uv;
 };
 
-// For intermediate data. Hold here for writting to gpu.
-struct MeshData {
-        std::vector<Vertex> vertices;
-        std::vector<u32>    indices;
-};
+// ===== MODELS ===== //
 
-struct Mesh {
-        GPUBuffer buffer;
-
-        u64 vertices_size;
-        u64 index_count;
-};
-
+// Represents a object transform in 3D.
 struct Transform {
         Vec3 position{};
-        Vec3 rotation{};
+        Quat rotation{};
         Vec3 scale{ 1, 1, 1 };
 };
 
+// Represents a object transform in 2D.
+struct Transform2D {
+        Vec2  position{};
+        float rotation{};
+        Vec2  scale{ 1, 1 };
+};
+
+// A vertex and index buffer to represent a single mesh
+struct Mesh {
+        GPUBuffer buffer;
+        u64       vertices_size;
+        u64       index_count;
+};
+
+struct InstanceData {
+        Transform transform;
+        u32       user_value;
+};
+
+// A single instance of a model.
+struct ModelInstance {
+        ModelID model_id;
+
+        Transform transform;
+        u32       user_value;
+};
+
+// Represents a collection of Meshes.
 struct Model {
-        void LoadFromOBJ(GameContext& game_context, const std::string& file_name);
+        // ===== Init/Deinit Functions ===== //
+
+        void Init(GameContext& game_context, VertexDrawData* vertices, u64 vertex_count, u32* indices, u64 index_count, u32 _max_instance_count);
+        void LoadFromOBJ(GameContext& game_context, const std::string& file_name, u32 _max_instance_count);
+
         void Destroy(GameContext& game_context);
 
-        std::vector<Mesh> meshes;
-        Transform         transform;
+        // ===== Members ===== //
 
-        MaterialID material_id;
+        std::vector<Mesh> meshes;
+        std::vector<InstanceData> instances;
+
+        GPUBuffer         instance_buffer;
+
+        Material material;
 
         u32 last_frame_rendered;
+
+        u32 max_instance_count;
+
+        void Draw() {
+                // TODO: Draw
+
+                instances.clear();
+        }
 };
+
+struct ModelSystem {
+        std::vector<Model> models;
+
+        void Draw(ModelInstance instance) {
+                models[instance.model_id].instances.emplace_back(instance.transform, instance.user_value);
+        }
+};
+
+// ==================== //
+// ===== TEXTURES ===== //
+// ==================== //
 
 // NOTE: Why does this take a command_pool? make a manager and pass command buffers please
 struct Texture {
@@ -67,4 +164,45 @@ struct Texture {
         VkImageView   image_view;
         VkSampler     sampler;
         VmaAllocation allocation;
+};
+
+// ========================== //
+// ===== TEXT RENDERING ===== //
+// ========================== //
+
+struct RenderedLetter {
+        char        letter;
+        Transform2D transform;
+        Vec4        colour;
+};
+
+struct TextSystem {
+        static constexpr u64 max_letter_count  = 100'000;
+        static constexpr u64 frame_buffer_size = max_letter_count * sizeof(InstanceDrawData);
+
+        Model     model;
+        GPUBuffer instance_data;
+        u32       letter_count;
+        u32       frame_index;
+
+        InstanceDrawData* next_frame_draw_data;
+
+
+        void Init(GameContext& game_context);
+        void AddText(Transform* text_data, u32 text_letter_count);
+        void Draw(VkCommandBuffer command_buffer);
+};
+
+struct RenderedText {
+        std::string                 text{};
+        Transform                   transform;
+        std::vector<RenderedLetter> letter_data;
+        Vec4                        default_colour{ 1, 1, 1, 1 };
+
+        void SetText(const std::string& new_text);
+        void SetSubText(const std::string& new_sub_text, u32 start);
+        void SetColour(Vec4 colour);
+        void SetColour(u32 letter_index, Vec4 colour); // NOTE: Count letter index from text, as we dont have spaces and new lines.
+
+        void Draw(TextSystem& text_system);
 };

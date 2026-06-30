@@ -313,6 +313,7 @@ void GameContext::Init() {
                 .shaderSampledImageArrayNonUniformIndexing = true,
                 .descriptorBindingVariableDescriptorCount  = true,
                 .runtimeDescriptorArray                    = true,
+                .scalarBlockLayout                         = true,
                 .timelineSemaphore                         = true,
                 .bufferDeviceAddress                       = true,
         };
@@ -411,7 +412,7 @@ void GameContext::Init() {
                 .imageUsage       = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
                 .preTransform     = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR,
                 .compositeAlpha   = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,
-                .presentMode      = VK_PRESENT_MODE_FIFO_KHR, // TODO: this is guarateed to be available, might want to allow other settings.
+                .presentMode      = VK_PRESENT_MODE_IMMEDIATE_KHR, // TODO: this is guarateed to be available, might want to allow other settings.
         };
 
         res = vkCreateSwapchainKHR(vulkan_device, &swapchain_info, nullptr, &vulkan_swapchain);
@@ -526,7 +527,7 @@ void GameContext::Init() {
                 VmaAllocationCreateFlags allocation_flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
                                                             VMA_ALLOCATION_CREATE_HOST_ACCESS_ALLOW_TRANSFER_INSTEAD_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT;
 
-                draw_data[i] = CreateGPUBuffer(vulkan_device, vulkan_allocator, sizeof(ShaderDrawData) * max_draw_count, graphics_queue_family,
+                draw_data[i] = CreateGPUBuffer(vulkan_device, vulkan_allocator, sizeof(Material) * max_draw_count, graphics_queue_family,
                                                VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT, allocation_flags);
 
                 VkBufferDeviceAddressInfo uniform_buffer_address_info{
@@ -595,25 +596,35 @@ void GameContext::Init() {
 
         // ===== Descriptor =====
 
-        VkDescriptorBindingFlags descriptor_variable_flag{ VK_DESCRIPTOR_BINDING_VARIABLE_DESCRIPTOR_COUNT_BIT };
+        VkDescriptorBindingFlags descriptor_variable_flags[2] = { 0, VK_DESCRIPTOR_BINDING_VARIABLE_DESCRIPTOR_COUNT_BIT };
 
         VkDescriptorSetLayoutBindingFlagsCreateInfo descriptor_binding_flags{
                 .sType         = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO,
-                .bindingCount  = 1,
-                .pBindingFlags = &descriptor_variable_flag,
+                .bindingCount  = 2,
+                .pBindingFlags = &descriptor_variable_flags[0],
+        };
+
+        VkDescriptorSetLayoutBinding descriptor_layout_binding_matrix{
+                .binding         = 0,
+                .descriptorType  = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+                .descriptorCount = 1,
+                .stageFlags      = VK_SHADER_STAGE_VERTEX_BIT,
         };
 
         VkDescriptorSetLayoutBinding descriptor_layout_binding_texture{
+                .binding         = 1,
                 .descriptorType  = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-                .descriptorCount = 100, // Arbitrary, what is this?
-                .stageFlags      = VK_SHADER_STAGE_FRAGMENT_BIT,
+                .descriptorCount = 100,
+                .stageFlags      = VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_VERTEX_BIT,
         };
+
+        VkDescriptorSetLayoutBinding bindings[2] = { descriptor_layout_binding_matrix, descriptor_layout_binding_texture };
 
         VkDescriptorSetLayoutCreateInfo descriptor_layout_texture_info{
                 .sType        = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
                 .pNext        = &descriptor_binding_flags,
-                .bindingCount = 1,
-                .pBindings    = &descriptor_layout_binding_texture,
+                .bindingCount = 2,
+                .pBindings    = &bindings[0],
         };
 
         res = vkCreateDescriptorSetLayout(vulkan_device, &descriptor_layout_texture_info, nullptr, &descriptor_set_layout);
@@ -623,16 +634,23 @@ void GameContext::Init() {
                 exit(res);
         }
 
-        VkDescriptorPoolSize pool_size{
+        VkDescriptorPoolSize pool_sizes[2];
+
+        pool_sizes[0] = {
                 .type            = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-                .descriptorCount = 100, // NOTE: Why?
+                .descriptorCount = 100,
+        };
+
+        pool_sizes[1] = {
+                .type            = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+                .descriptorCount = 1,
         };
 
         VkDescriptorPoolCreateInfo pool_info{
                 .sType         = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
                 .maxSets       = 1,
-                .poolSizeCount = 1,
-                .pPoolSizes    = &pool_size,
+                .poolSizeCount = 2,
+                .pPoolSizes    = &pool_sizes[0],
         };
 
         res = vkCreateDescriptorPool(vulkan_device, &pool_info, nullptr, &descriptor_pool);
@@ -719,7 +737,7 @@ void GameContext::Init() {
 
         // ===== Load Shaders ===== //
         Slang::ComPtr<slang::IBlob>   diagnostics;
-        Slang::ComPtr<slang::IModule> slang_module{ slang_session->loadModuleFromSource("base", "Assets/Shaders/shader.slang", nullptr,
+        Slang::ComPtr<slang::IModule> slang_module{ slang_session->loadModuleFromSource("base", "Assets/Shaders/Shading.slang", nullptr,
                                                                                         diagnostics.writeRef()) };
         // or slang_session->loadModule("compute");
 
@@ -758,20 +776,34 @@ void GameContext::Init() {
 
         VkVertexInputBindingDescription vertex_binding{
                 .binding   = 0,
-                .stride    = sizeof(Vertex),
+                .stride    = sizeof(VertexDrawData),
                 .inputRate = VK_VERTEX_INPUT_RATE_VERTEX,
         };
 
+        VkVertexInputBindingDescription instance_binding{
+                .binding   = 1,
+                .stride    = sizeof(InstanceDrawData),
+                .inputRate = VK_VERTEX_INPUT_RATE_INSTANCE,
+        };
+
+        VkVertexInputBindingDescription input_bindings[2] = { vertex_binding, instance_binding };
+
         std::vector<VkVertexInputAttributeDescription> vertex_attributes{
                 { .location = 0, .binding = 0, .format = VK_FORMAT_R32G32B32_SFLOAT },
-                { .location = 1, .binding = 0, .format = VK_FORMAT_R32G32B32_SFLOAT, .offset = offsetof(Vertex, normal) },
-                { .location = 2, .binding = 0, .format = VK_FORMAT_R32G32_SFLOAT, .offset = offsetof(Vertex, uv) },
+                { .location = 1, .binding = 0, .format = VK_FORMAT_R32G32B32_SFLOAT, .offset = offsetof(VertexDrawData, normal) },
+                { .location = 2, .binding = 0, .format = VK_FORMAT_R32G32_SFLOAT, .offset = offsetof(VertexDrawData, uv) },
+
+                { .location = 3, .binding = 1, .format = VK_FORMAT_R32G32B32A32_SFLOAT, .offset = 0 },
+                { .location = 4, .binding = 1, .format = VK_FORMAT_R32G32B32A32_SFLOAT, .offset = 16 },
+                { .location = 5, .binding = 1, .format = VK_FORMAT_R32G32B32A32_SFLOAT, .offset = 32 },
+                { .location = 6, .binding = 1, .format = VK_FORMAT_R32G32B32A32_SFLOAT, .offset = 48 },
+                { .location = 7, .binding = 1, .format = VK_FORMAT_R32_UINT, .offset = offsetof(InstanceDrawData, user_value) },
         };
 
         VkPipelineVertexInputStateCreateInfo vertex_input_state{
                 .sType                           = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
-                .vertexBindingDescriptionCount   = 1,
-                .pVertexBindingDescriptions      = &vertex_binding,
+                .vertexBindingDescriptionCount   = 2,
+                .pVertexBindingDescriptions      = &input_bindings[0],
                 .vertexAttributeDescriptionCount = (u32)vertex_attributes.size(),
                 .pVertexAttributeDescriptions    = vertex_attributes.data(),
         };
@@ -797,7 +829,7 @@ void GameContext::Init() {
 
         VkPipelineRasterizationStateCreateInfo rasterization_state{
                 .sType     = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
-                .polygonMode = VK_POLYGON_MODE_LINE,
+                // .polygonMode = VK_POLYGON_MODE_LINE,
                 // .cullMode  = VK_CULL_MODE_BACK_BIT,
                 .frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE,
                 .lineWidth = 1.0f,
@@ -862,6 +894,37 @@ void GameContext::Init() {
         SDL_SetWindowRelativeMouseMode(window.window, true);
 
         input_system.Init(&window);
+
+        // ===== //
+
+        VmaAllocationCreateFlags allocation_flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT;
+
+        per_frame_draw_buffer = CreateGPUBuffer(vulkan_device, vulkan_allocator, sizeof(FrameDrawData) * max_frames_in_flight, graphics_queue_family,
+                                                VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT, allocation_flags);
+
+        // ===== //
+
+        VkDescriptorBufferInfo descriptor{};
+
+        descriptor.buffer = per_frame_draw_buffer.buffer;
+        descriptor.offset = 0;
+        descriptor.range  = VK_WHOLE_SIZE;
+
+        VkWriteDescriptorSet write_descriptor_set{
+                .sType           = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+                .dstSet          = descriptor_set,
+                .dstBinding      = 0,
+                .dstArrayElement = 0,
+                .descriptorCount = (u32)1,
+                .descriptorType  = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+                .pBufferInfo     = &descriptor,
+        };
+
+        vkUpdateDescriptorSets(vulkan_device, 1, &write_descriptor_set, 0, nullptr);
+
+        // ===== Text ===== //
+
+        text_system.Init(*this);
 }
 
 void GameContext::AddTexture(const Texture& texture, u32 index) {
@@ -876,7 +939,7 @@ void GameContext::AddTexture(const Texture& texture, u32 index) {
         VkWriteDescriptorSet write_descriptor_set{
                 .sType           = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
                 .dstSet          = descriptor_set,
-                .dstBinding      = 0,
+                .dstBinding      = 1,
                 .dstArrayElement = index,
                 .descriptorCount = (u32)1,
                 .descriptorType  = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
@@ -1108,6 +1171,14 @@ void GameContext::Render(const Camera& camera) {
         vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
         vkCmdSetScissor(command_buffer, 0, 1, &scissor);
 
+        FrameDrawData per_frame_data{
+                camera.GetProjectionMatrix(),
+                camera.GetViewMatrix(),
+        };
+
+        u64 frame_draw_data_offset = frame_index * sizeof(FrameDrawData);
+        memcpy(((u8*)per_frame_draw_buffer.allocation_info.pMappedData) + frame_draw_data_offset, &per_frame_data, sizeof(FrameDrawData));
+
         vkCmdBindDescriptorSets(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_layout, 0, 1, &descriptor_set, 0, nullptr);
 
         // Draw Models
@@ -1119,20 +1190,26 @@ void GameContext::Render(const Camera& camera) {
 
                 if (model.meshes[0].index_count == 0) continue;
 
-                shader_draw_data.projection = camera.GetProjectionMatrix();
-                shader_draw_data.view       = camera.GetViewMatrix();
+                // shader_draw_data.projection = camera.GetProjectionMatrix();
+                // shader_draw_data.view       = camera.GetViewMatrix();
 
-                // TODO: Rotation
-                shader_draw_data.model = glm::translate(Mat4(1.0f), model.transform.position);
-                shader_draw_data.model = glm::scale(shader_draw_data.model, model.transform.scale);
+                for (u32 instance_index = 0; instance_index < model.instances.size(); instance_index++) {
+                        InstanceDrawData instance_draw_data{};
 
-                shader_draw_data.material_id = model.material_id;
+                        instance_draw_data.model_matrix = glm::translate(Mat4(1.0f), model.instances[instance_index].transform.position);
+                        instance_draw_data.model_matrix = glm::scale(instance_draw_data.model_matrix, model.instances[instance_index].transform.scale);
+                        // Rotate
 
-                u64 draw_data_offset = sizeof(ShaderDrawData) * i;
-                memcpy((u8*)draw_data[frame_index].allocation_info.pMappedData + draw_data_offset, &shader_draw_data, sizeof(ShaderDrawData));
+                        u64 draw_data_offset = sizeof(InstanceDrawData) * model.max_instance_count * frame_index;
+                        memcpy((u8*)model.instance_buffer.allocation_info.pMappedData + draw_data_offset, &instance_draw_data, sizeof(InstanceDrawData));
+                }
 
-                VkDeviceSize vertex_offset{ 0 };
-                vkCmdBindVertexBuffers(command_buffer, 0, 1, &model.meshes[0].buffer.buffer, &vertex_offset);
+                u64 draw_data_offset = sizeof(InstanceDrawData) * i;
+                memcpy((u8*)draw_data[frame_index].allocation_info.pMappedData + draw_data_offset, &model.material, sizeof(Material));
+
+                VkDeviceSize vertex_offset[2] = { 0, 0 };
+                VkBuffer     buffers[2]       = { model.meshes[0].buffer.buffer, model.instance_buffer.buffer };
+                vkCmdBindVertexBuffers(command_buffer, 0, 2, &buffers[0], &vertex_offset[0]);
 
                 u32 index_offset = model.meshes[0].vertices_size;
                 vkCmdBindIndexBuffer(command_buffer, model.meshes[0].buffer.buffer, index_offset, VK_INDEX_TYPE_UINT32);
@@ -1141,7 +1218,7 @@ void GameContext::Render(const Camera& camera) {
                 u64 device_address = draw_data[frame_index].device_address + draw_data_offset;
                 vkCmdPushConstants(command_buffer, pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(VkDeviceAddress), &device_address);
 
-                vkCmdDrawIndexed(command_buffer, (u32)model.meshes[0].index_count, 1, 0, 0, 0);
+                vkCmdDrawIndexed(command_buffer, (u32)model.meshes[0].index_count, model.instances.size(), 0, 0, 0);
         }
 
         vkCmdEndRendering(command_buffer);
@@ -1253,21 +1330,27 @@ void Game::Init() {
 
         // ===== Mesh Data =====
 
+        RenderedText r_text;
+        r_text.SetText("Hello World");
+        r_text.Draw(game_context.text_system);
+        game_context.models.push_back(game_context.text_system.model);
+
         // Skysphere
         {
                 Model model;
-                model.LoadFromOBJ(game_context, "Assets/Models/SkySphere.obj");
+                model.LoadFromOBJ(game_context, "Assets/Models/SkySphere.obj", 1);
                 // model.LoadFromOBJ(game_context, "Assets/Models/test.obj");
-                model.material_id = MaterialID::SkyMap;
-                model.transform.scale = Vec3(100, 100, 100);
+                model.material.type = MaterialID::SkyMap;
+                model.instances.emplace_back(Transform{Vec3(0, 0, 0), Quat{}, Vec3(10, 10, 10)}, 0);
                 game_context.models.push_back(model);
         }
 
         // test mesh
         {
                 Model model;
-                model.LoadFromOBJ(game_context, "Assets/Models/test.obj");
-                model.material_id = MaterialID::Basic;
+                model.LoadFromOBJ(game_context, "Assets/Models/test.obj", 1);
+                model.material.type = MaterialID::Text;
+                model.instances.emplace_back(Transform{Vec3(0, 0, 0), Quat{}, Vec3(1, 1, 1)}, 0);
                 game_context.models.push_back(model);
         }
 
@@ -1276,15 +1359,47 @@ void Game::Init() {
         skymap.Load(game_context.vulkan_device, game_context.graphics_command_pool, game_context.graphics_queue, "Assets/SkyMaps/SpaceLDR.ktx",
                     game_context.vulkan_allocator);
         game_context.AddTexture(skymap, 0);
+
+
+        ground_texture.Load(game_context.vulkan_device, game_context.graphics_command_pool, game_context.graphics_queue, "Assets/Textures/ForestGround.ktx",
+                            game_context.vulkan_allocator);
+        game_context.AddTexture(ground_texture, 1);
+
+        ground_normal_texture.Load(game_context.vulkan_device, game_context.graphics_command_pool, game_context.graphics_queue,
+                                   "Assets/Textures/ForestGroundNormal.ktx", game_context.vulkan_allocator);
+        game_context.AddTexture(ground_normal_texture, 2);
+
+        ground_disp_texture.Load(game_context.vulkan_device, game_context.graphics_command_pool, game_context.graphics_queue,
+                                 "Assets/Textures/ForestGroundDisp.ktx", game_context.vulkan_allocator);
+        game_context.AddTexture(ground_disp_texture, 3);
+
+        for (u32 i = 0; i < 26; i++) {
+                std::string letter_path = "Assets/Text/";
+                letter_path += 'A' + i;
+                letter_path += ".ktx";
+
+                text[i].Load(game_context.vulkan_device, game_context.graphics_command_pool, game_context.graphics_queue, letter_path,
+                             game_context.vulkan_allocator);
+
+                game_context.AddTexture(text[i], 99 - i); // A at back
+        }
 }
 
 void Game::Shutdown() {
         vkDeviceWaitIdle(game_context.vulkan_device);
 
-        game_context.models[0].Destroy(game_context);
         game_context.models[1].Destroy(game_context);
+        game_context.models[2].Destroy(game_context);
 
         skymap.Destroy(game_context);
+        ground_texture.Destroy(game_context);
+        ground_normal_texture.Destroy(game_context);
+        ground_disp_texture.Destroy(game_context);
+
+        for (u32 i = 0; i < 26; i++) {
+                text[i].Destroy(game_context);
+        }
+
         planet.Shutdown();
         camera_controller.Shutdown();
 
@@ -1295,7 +1410,7 @@ void Game::Update(float delta_time) {
         camera.Update(game_context);
         camera_controller.Update(delta_time);
 
-        game_context.models[0].transform.position = camera.game_object.position;
+        game_context.models[1].instances[0].transform.position = camera.game_object.position;
 
         planet.Update();
 }
@@ -1311,7 +1426,8 @@ void Game::Run() {
                 // ===== Delta Time ===== //
 
                 float delta_time = float(SDL_GetTicks() - last_time) / 1000.0f;
-                last_time        = SDL_GetTicks();
+                if (delta_time > 1.0f / 30.0f) delta_time = 1.0f / 30.0f;
+                last_time = SDL_GetTicks();
 
                 frame_time += delta_time;
                 frame_count++;
@@ -1327,13 +1443,14 @@ void Game::Run() {
 
                 // ===== Gameplay Update ===== //
 
-                game_context.models.resize(2);
-                game_context.models.reserve(planet.chunks_to_render.size() + 2);
+                game_context.models.resize(3);
+                game_context.models.reserve(planet.chunks_to_render.size() + 3);
 
                 Update(delta_time);
+
                 for (u32 i = 0; i < planet.chunks_to_render.size(); i++) {
                         game_context.models.push_back(planet.chunks[planet.chunks_to_render[i]].model);
-                        planet.chunks[planet.chunks_to_render[i]].model.last_frame_rendered = game_context.GetLastFinishedFrame() + 1;
+                        planet.chunks[planet.chunks_to_render[i]].model.last_frame_rendered = game_context.GetLastFinishedFrame() + 2;
                 }
 
                 // ===== Render ===== //

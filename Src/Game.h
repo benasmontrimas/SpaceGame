@@ -22,17 +22,10 @@ struct Window {
         i32         height;
 };
 
-// Per Model - TODO: Split into VP and M matrices, can pass VP at start of render.
-// Can even pass all model matrices with VP? pre calc and send together.
-struct ShaderDrawData {
-        Mat4 projection; //
-        Mat4 view;
-        Mat4 model;
+// ====== //
 
-        MaterialID material_id;
-
-        u8 padding[60];
-};
+static constexpr u32 max_frames_in_flight{ 2 };
+static constexpr u32 max_draw_count{ 10'000 };
 
 // NOTE: Can I split out core stuff into a GameContext struct so that I can pass that around to systems and have gameplay in Game.
 
@@ -43,11 +36,6 @@ struct GameContext {
         void Shutdown();
 
         void Render(const Camera& camera);
-
-        // ====== //
-
-        static constexpr u32 max_frames_in_flight{ 2 };
-        static constexpr u32 max_draw_count{ 10'000 };
 
         // ====== //
 
@@ -124,9 +112,9 @@ struct GameContext {
 
         u64 frames_submitted{}; // (frames_submitted - max_frames_in_flight) == last know finished frame
 
-        ShaderDrawData shader_draw_data;
-
         bool swapchain_needs_resizing{ false };
+
+        GPUBuffer per_frame_draw_buffer;
 
         // ===== Meshes ===== //
         std::vector<Model> models;
@@ -134,6 +122,10 @@ struct GameContext {
         // ===== Input ===== //
 
         InputSystem input_system;
+
+        // ===== Text ===== //
+
+        TextSystem text_system;
 
         // ===== Functions ===== //
 
@@ -154,6 +146,11 @@ struct Game {
 
         Planet  planet;
         Texture skymap;
+        Texture ground_texture;
+        Texture ground_normal_texture;
+        Texture ground_disp_texture;
+
+        Texture text[26];
 
         // Actions
         Action* forward_action;

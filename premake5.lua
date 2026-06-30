@@ -4,6 +4,7 @@ workspace "SpaceGame"
         architecture "x64"
 
 project "SpaceGame"
+        targetname "SpaceGame"
         -- Language setup --
         kind "ConsoleApp"
         language "C++"
@@ -62,7 +63,6 @@ project "SpaceGame"
 
                 links {
                         "vulkan",
-                        "vulkan-1",
                         "SDL3",
                         "External/KTX/lib/ktx",
                         "volk",

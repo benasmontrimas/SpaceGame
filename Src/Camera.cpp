@@ -7,21 +7,24 @@ void Camera::Update(GameContext& game_context) {
 
 // TODO: Move this to the camera class and use the rotation vector form GameObject as we will want to allow for rotation along y aswell.
 Mat4 Camera::GetViewMatrix() const {
-        // return glm::translate(Mat4(1.0f), game_object.position);
+
+        Vec3 up_direction      = rotate(game_object.rotation, Vec3{ 0.0f, 1.0f, 0.0f });
+        Vec3 right_direction   = rotate(game_object.rotation, Vec3{ 1.0f, 0.0f, 0.0f });
+        Vec3 forward_direction = rotate(game_object.rotation, Vec3{ 0.0f, 0.0f, 1.0f });
 
         Mat4 view = {
-                game_object.right_direction.x,
-                game_object.right_direction.y,
-                game_object.right_direction.z,
-                -(glm::dot(game_object.right_direction, game_object.position)),
-                game_object.up_direction.x,
-                game_object.up_direction.y,
-                game_object.up_direction.z,
-                -(glm::dot(game_object.up_direction, game_object.position)),
-                game_object.forward_direction.x,
-                game_object.forward_direction.y,
-                game_object.forward_direction.z,
-                -(glm::dot(game_object.forward_direction, game_object.position)),
+                right_direction.x,
+                right_direction.y,
+                right_direction.z,
+                -(glm::dot(right_direction, game_object.position)),
+                up_direction.x,
+                up_direction.y,
+                up_direction.z,
+                -(glm::dot(up_direction, game_object.position)),
+                forward_direction.x,
+                forward_direction.y,
+                forward_direction.z,
+                -(glm::dot(forward_direction, game_object.position)),
                 0,
                 0,
                 0,
@@ -38,12 +41,12 @@ Mat4 Camera::GetProjectionMatrix() const {
 
         projection[0][0] = c / aspect_ratio;
 
-        projection[1][1] = c;
+        projection[1][1] = -c;
 
-        projection[2][2] = (far + near) / (far - near);
+        projection[2][2] = (far) / (far - near);
         projection[2][3] = 1;
 
-        projection[3][2] = -(2 * far * near) / (far - near);
+        projection[3][2] = -(far * near) / (far - near);
         projection[3][3] = 0;
 
         return projection;
@@ -80,18 +83,16 @@ void DefaultController::Init(GameContext& _game_context, GameObject& _owner) {
         }
         if (!up_action) {
                 up_action = game_context->input_system.RegisterAction("Up", ActionType::Scalar);
-                up_action->AddKey(KeyCode::Q);
+                up_action->AddKey(KeyCode::E);
         }
         if (!down_action) {
                 down_action = game_context->input_system.RegisterAction("Down", ActionType::Scalar);
-                down_action->AddKey(KeyCode::E);
+                down_action->AddKey(KeyCode::Q);
         }
 
         owner = &_owner;
 
-        owner->forward_direction = { 0, 0, 1.0f };
-        owner->right_direction   = { 1.0f, 0, 0.0f };
-        owner->up_direction      = { 0.0f, 1.0f, 0.0f };
+        owner->rotation = { { 0.0f, 1.0f, 0.0f }, normalize(owner->position) };
 }
 
 void DefaultController::Shutdown() {
@@ -99,58 +100,48 @@ void DefaultController::Shutdown() {
 
 // Do we just directly modify the position of the object?
 void DefaultController::Update(float delta_time) {
-        Vec3 movement{};
 
-        movement += forward_action->GetScalar() * owner->forward_direction;
-        movement -= backward_action->GetScalar() * owner->forward_direction;
-        movement += right_action->GetScalar() * owner->right_direction;
-        movement -= left_action->GetScalar() * owner->right_direction;
-        movement += up_action->GetScalar() * owner->up_direction;
-        movement -= down_action->GetScalar() * owner->up_direction;
+        // ===== Update Rotation ===== //
 
+        // == Get World Up == //
 
-        if (movement.x != 0 and movement.y != 0) movement = glm::normalize(movement);
+        Vec3 new_world_up = glm::normalize(owner->position); // Assuming planet at 0,0,0
 
-        movement *= movement_speed * delta_time;
+        // == Rotation in world == //
 
-        // Position += movement
+        Quat world_rot{ world_up, new_world_up };
+        world_up        = new_world_up;
+        owner->rotation = world_rot * owner->rotation;
+        owner->rotation = glm::normalize(owner->rotation);
 
-        owner->position += movement;
+        // == Camera Rotation == //
 
-        // Rotate with the mouse delta
-        // TODO: Fix choppy mouse movement. Seems slow movements arnt registered.
-        Vec2 mouse_movement = game_context->input_system.mouse.delta * delta_time * 0.1f;
+        Vec3 right = rotate(owner->rotation, Vec3{ 1.0f, 0.0f, 0.0f });
 
-        owner->rotation.x += mouse_movement.x;
-        while (owner->rotation.x < 0) {
-                owner->rotation.x += 2.0f * PI_F;
+        Vec2 mouse_delta = game_context->input_system.mouse.delta * mouse_sensitivity;
+
+        Quat yaw_rot   = glm::angleAxis(mouse_delta.x, world_up);
+        Quat pitch_rot = glm::angleAxis(mouse_delta.y, right);
+
+        owner->rotation = glm::normalize(pitch_rot * yaw_rot * owner->rotation);
+
+        // ===== Movement ===== //
+
+        Vec3 movement_direction = {
+                right_action->GetScalar() - left_action->GetScalar(),
+                up_action->GetScalar() - down_action->GetScalar(),
+                forward_action->GetScalar() - backward_action->GetScalar(),
+        };
+
+        if (length2(movement_direction) > 0.0f) {
+                movement_direction = normalize(movement_direction);
+                Vec3 movement      = movement_direction * movement_speed * delta_time;
+                owner->position += rotate(owner->rotation, movement);
         }
-        while (owner->rotation.x >= 2.0f * PI_F) {
-                owner->rotation.x -= 2.0f * PI_F;
-        }
 
+        // ===== Change Movement Speed with Mouse Wheel ===== //
 
-        owner->rotation.y += mouse_movement.y;
-        owner->rotation.y = std::clamp(owner->rotation.y, -1.5f, 1.5f);
-
-        // std::println("Mouse: {}, {}", mouse_movement.x, mouse_movement.y);
-
-        // Probably want to update forward, right, and up directions.
-
-        // Currenly just keep up as +y, will probably want to orietate it around the planet
-        owner->up_direction      = Vec3{ 0, 1.0f, 0.0f };
-        // Right wants to be +x rotated by (yaw in +z)
-        // NOTE: Only works whilst were upright, after that will need to do extra work.
-        // Can just rotate +x around the difference between up and +z?
-        // Is it not just +x rotated by pitch around +z? no, if up is +x and we dont move camera its wrong.
-        // Use frames and just convert +x from +z space to up space. and then rotate around up by pitch.
-        Vec3 x_vec               = Vec3{ 1.0f, 0, 0 };
-        owner->right_direction   = glm::rotate(x_vec, owner->rotation.x, owner->up_direction);
-        // Forward is just Cross of up and right. Up X Right
-        owner->forward_direction = -glm::cross(owner->up_direction, owner->right_direction);
-        owner->forward_direction = glm::rotate(owner->forward_direction, owner->rotation.y, owner->right_direction);
-
-        owner->up_direction = glm::cross(owner->right_direction, owner->forward_direction);
-
-        // std::println("Movement: {}, {}", movement.x, movement.y);
+        Vec2 mouse_scroll = game_context->input_system.mouse.wheel_delta;
+        movement_speed += mouse_scroll.y * 100;
+        movement_speed = std::clamp(movement_speed, 10.0f, 10000.0f);
 }

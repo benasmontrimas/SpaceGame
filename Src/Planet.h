@@ -15,28 +15,47 @@
 // ===== Constants ===== //
 // ===================== //
 
+constexpr u32 MINIMUM_CHUNK_DIMS = 64;
+constexpr u32 PLANET_MAX_RADIUS  = 50'000;
+
+
 using NodeID  = u32;
 using ChunkID = u32;
 
+constexpr u32 PLANET_SEED = 3'203;
+
+constexpr u32 NO_FREE = u32_max;
+
 constexpr u32 NODE_CHILD_COUNT            = 8;
-constexpr u32 NO_CHILDREN                 = u32_max;
-constexpr u32 PARENT_ROOT                 = u32_max - 1;
-constexpr u32 NO_CHUNK                    = u32_max;
-constexpr u32 EMPTY_NODE                  = u32_max - 1;
 constexpr u32 CHUNK_RADIUS_GROWTH_PER_LOD = 2;
+
+constexpr u32 NO_CHILDREN = u32_max;
+constexpr u32 NO_CHUNK    = u32_max;
+constexpr u32 EMPTY_CHUNK = u32_max - 1;
+constexpr u32 PARENT_ROOT = u32_max;
 
 constexpr Vec3 PARENT_CENTER_OFFSET[NODE_CHILD_COUNT] = {
         { -1, -1, -1 }, { -1, -1, 1 }, { -1, 1, -1 }, { -1, 1, 1 }, { 1, -1, -1 }, { 1, -1, 1 }, { 1, 1, -1 }, { 1, 1, 1 },
 };
 
-constexpr u32   CHUNK_LOD_DISTANCE_COUNT                      = 6;
+constexpr u32   CHUNK_LOD_DISTANCE_COUNT                      = 10;
 constexpr float CHUNK_LOD_DISTANCES[CHUNK_LOD_DISTANCE_COUNT] = {
         // 0, 32, 64, 128, 256, 1'024,
-        1, 1, 1, 1, 1, 1,
+        // 1000, 1000, 1000, 1000, 1000, 1000,
+        1,     1,     100,   100,  100, 100,
+        1'000, 1'000, 1'000, 5'000
+        // 1, 1, 100, 1000, 10000, 100000
 };
 
-constexpr u32 MINIMUM_CHUNK_DIMS = 8;
-constexpr u32 PLANET_MAX_RADIUS  = 20'000;
+
+enum class PlanetPipelineID {
+        Pass1,
+        Pass2,
+        Pass3,
+        Pass4,
+        Pass5,
+        Pass6,
+};
 
 // Calculates the size the root of the chunk tree given a minimum chunk size.
 constexpr u32 GetTreeRootDiameter() {
@@ -92,29 +111,32 @@ struct Planet;
 // ===== Structs ===== //
 // =================== //
 
+// Used for timeline semaphore values
+enum class PlanetProcessingStages : u32 {
+        Invalid,
+        StageOne,
+        AllocateBuffers,
+        StageTwo,
+        Finished,
+};
 
 // Keeps track of a chunks state.
 enum class PlanetGenerationState : u32 {
         None,
 
+        Waiting,
+
         // ===== Generation Stages ===== //
 
-        WaitingOnGeneration,
-        ProcessingStageOne, // Pass 1 and 2
-        ProcessingStageTwo, // Sum offsets
-        AllocateBuffers,
-        ProcessingStageThree, // Pass 3 and 4
-        FinishingProcessing,  // Return Chunk
+        Processing,
 
         // ===== Destroy States ===== //
 
-        WaitingForRenderFinish,
         WaitingOnDestroy,
 
         // ===== Idle States ===== //
 
         Initialised,
-        Empty,
 };
 
 // The planet chunks
@@ -123,13 +145,22 @@ struct PlanetChunk {
         Vec3                  position;
 
         union {
-                // NOTE: Do we need this?
-                u32 lod_level;
+                u32 lod;
                 // ===== Points to next free slot if destroyed ===== //
                 u32 next_free_index;
         };
 
         Model model;
+
+        bool IsEmpty() const {
+                if (state != PlanetGenerationState::Initialised) return false;
+                return model.meshes.size() == 0 or model.meshes[0].index_count == 0;
+        }
+
+        bool IsRenderReady() const {
+                if (model.meshes.size() == 0) return false;
+                return state == PlanetGenerationState::Initialised and model.meshes[0].index_count > 0;
+        }
 
         // ===== Experimental ===== //
 
@@ -139,33 +170,27 @@ struct PlanetChunk {
 
 // Node in octree structure to keep track of chunk indices.
 struct PlanetChunkNode {
-        // ===== Properties Masks ===== //
-
-        static constexpr u32 parent_offset_mask = 0B111;
-        static constexpr u32 is_empty_mask      = 0B1000;
-
         // ===== Members ===== //
 
+        // NOTE: If desperate to reduce size, use 30 bits for index, and last 2 for the states. 0 has child, 1 has chunk, 2 empty
+        // Unlikely we have over a billion chunks/nodes
         NodeID  first_child_index;
         ChunkID chunk_index;
 
         // ===== Functions ===== //
 
-        void SetEmpty(bool is_empty) {
-                if (is_empty) chunk_index = EMPTY_NODE;
-                else chunk_index = NO_CHUNK;
-        }
-
         bool IsEmpty() const {
-                return chunk_index == EMPTY_NODE;
+                assert((chunk_index == NO_CHUNK or first_child_index == NO_CHILDREN) and "Node should never have a chunk and children at the same time");
+
+                return chunk_index == EMPTY_CHUNK;
         }
 
         bool HasChildren() const {
-                return (first_child_index != NO_CHILDREN) and !IsEmpty();
+                return first_child_index != NO_CHILDREN;
         }
 
         bool HasChunk() const {
-                return (chunk_index != NO_CHUNK and !IsEmpty());
+                return chunk_index != NO_CHUNK;
         }
 };
 
@@ -183,11 +208,16 @@ struct PlanetChunkTree {
         void Update();
         void Shutdown();
 
-        void   Traverse(NodeID node_index, AABB bounds, u32 lod_level);
-        NodeID AssignChildren(NodeID parent_index);
-        void   RemoveChildren(NodeID parent_index);
-        void   ResetNode(NodeID node_index);
-        void   DirtyNode(NodeID node_index);
+        void   Traverse(NodeID node_index, AABB bounds, u32 lod);
+        void   Split(NodeID node_index, AABB bounds, u32 lod);
+        void   HandleLeaf(NodeID node_index, AABB bounds, u32 lod);
+        NodeID AddChildren(NodeID node_index);
+        void   RemoveChildren(NodeID node_index);
+        void   CreateNodesChunk(NodeID node_index, AABB bounds, u32 lod);
+        void   DestroyNodesChunk(NodeID node_index);
+
+        // Use to set empty to false so that we re-check the node
+        void DirtyNode(NodeID node_index);
 
         NodeID GetParentIndex(NodeID node_index) {
                 NodeID parent_index = parent_indices[node_index / 8];
@@ -202,7 +232,7 @@ struct PlanetCreationInfo {
 
         VkDeviceAddress edges;
         VkDeviceAddress cell_sums;
-        VkDeviceAddress triangle_normals;
+        VkDeviceAddress normals;
 
         VkDeviceAddress indices;
         VkDeviceAddress vertices;
@@ -229,12 +259,13 @@ struct PlanetChunkProgress {
         u32                chunk_index;
         PlanetCreationInfo info;
 
-        GPUBuffer edge_buffer;
-        GPUBuffer cell_sums_buffer;
-
         VkSemaphore semaphore;
 
-        u32 command_buffer_index;
+        GPUBuffer edge_buffer;
+        GPUBuffer cell_sums_buffer;
+        GPUBuffer normal_buffer;
+
+        u32 resource_index;
 };
 
 struct Planet {
@@ -244,8 +275,16 @@ struct Planet {
         static constexpr u32 THREAD_GROUP_Y        = 1;
         static constexpr u32 THREAD_GROUP_Z        = 1;
         static constexpr u32 COMMAND_BUFFER_COUNT  = 100;
-        static constexpr u32 GENERATION_PASS_COUNT = 5;
+        static constexpr u32 GENERATION_PASS_COUNT = 6;
         static constexpr u32 CHUNK_CELLS           = 127;
+        static constexpr u32 CHUNK_EDGES           = 128;
+
+        static constexpr const char* ENTRY_POINT_NAMES[GENERATION_PASS_COUNT] = {
+                "Pass1", "Pass2", "Pass3", "Pass4", "Pass5", "Pass6",
+        };
+
+        static constexpr u64 EDGE_BUFFER_SIZE     = CHUNK_CELLS * CHUNK_EDGES * CHUNK_EDGES * sizeof(u32);
+        static constexpr u64 CELL_SUM_BUFFER_SIZE = CHUNK_CELLS * CHUNK_CELLS * sizeof(EdgeSumInfo);
 
         // ===== Members ===== //
 
@@ -253,8 +292,9 @@ struct Planet {
 
         GameContext* game_context;
 
-        VkCommandPool    command_pool;
-        VkCommandBuffer  command_buffers[COMMAND_BUFFER_COUNT];
+        VkCommandPool   command_pool;
+        VkCommandBuffer command_buffers[COMMAND_BUFFER_COUNT];
+
         std::vector<u32> free_command_buffers;
         VkPipelineLayout pipeline_layout;
         VkPipeline       pipelines[GENERATION_PASS_COUNT];
@@ -280,18 +320,18 @@ struct Planet {
         void Shutdown();
         void Update();
 
+        void    ProcessChunkIfAvailable(PlanetChunkProgress& chunk_progress);
         void    UpdateStates();
         ChunkID GetCommandBufferIndex();
         void    ReleaseCommandBufferIndex(ChunkID index);
 
         // TODO: I have changed these here -> Return EMPTY_NODE if empty! Oh wait we wont know yet!
-        ChunkID GenerateChunk(AABB bounds, ChunkID lod_level);
+        ChunkID GenerateChunk(AABB bounds, ChunkID lod);
         void    DestroyChunk(ChunkID chunk_index);
 
-        void FreeChunkInProgress(PlanetChunkProgress& chunk_progress);
+        void FreeChunkInProgress(u32 index);
 
         void RecordStageOne(PlanetChunkProgress& chunk_progress);
-        void StartStageTwo(PlanetChunkProgress& chunk_progress);
         void AllocateBuffers(PlanetChunkProgress& chunk_progress);
-        void RecordStageThree(PlanetChunkProgress& chunk_progress);
+        void RecordStageTwo(PlanetChunkProgress& chunk_progress);
 };

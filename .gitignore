@@ -14,3 +14,5 @@
 perf.data*
 flamegraph.svg
 VulkanLog.txt
+*.ktx
+*.png

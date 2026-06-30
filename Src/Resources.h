@@ -12,13 +12,10 @@ struct GPUBuffer {
 
         // ===== Synchronization ====== //
 
-        u32         owning_queue_family;
-        // TODO: Free these semaphores -> Create a DestroyGPUBuffer function!
         VkSemaphore ownership_semaphore;
-        // Used by the transfer engine as it never keeps ownership of the buffer, but reusing ownership_semaphore can result in
-        // 2 queue families waiting on the same semaphore, and im not sure how ordering works, if owning queue recieves it first
-        // the queue transitions would be broken.
         VkSemaphore transfer_semaphore;
+
+        u32 owning_queue_family; // This sets which family queue owns this resource
 
         bool IsValid() {
                 return buffer != VK_NULL_HANDLE;
@@ -60,8 +57,8 @@ struct BufferOwnershipInfo {
 void CmdReleaseBufferOwnership(BufferOwnershipInfo& info);
 void CmdAcquireBufferOwnership(BufferOwnershipInfo& info);
 
-void ReadFromGPUBuffer(GPUBuffer src, u32 offset, u32 size, u8* dst, GPUBuffer staging_buffer);
-void WriteToGPUBuffer(GPUBuffer dst, u32 offset, u32 size, u8* src, GPUBuffer staging_buffer);
+// void ReadFromGPUBuffer(GPUBuffer src, u32 offset, u32 size, u8* dst, GPUBuffer staging_buffer);
+// void WriteToGPUBuffer(GPUBuffer dst, u32 offset, u32 size, u8* src, GPUBuffer staging_buffer);
 
 // NOTE: Can simplify if we can check for Inified Memory (UMA) systems, which means we can just write to GPU memory from the cpu.
 // // This avoids queue syncronizations and transfers assuming that the copy is performed before any operation using it is submitted.

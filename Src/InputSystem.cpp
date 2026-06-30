@@ -43,7 +43,8 @@ bool InputSystem::Update() {
                 }
         }
 
-        mouse.delta = { 0, 0 };
+        mouse.delta       = { 0, 0 };
+        mouse.wheel_delta = { 0, 0 };
 
         // Poll new events
         for (SDL_Event event; SDL_PollEvent(&event);) {

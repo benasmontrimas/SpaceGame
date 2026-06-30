@@ -12,7 +12,9 @@ void PlanetChunkTree::Init(Planet* _planet) {
         float half_width = TREE_ROOT_DIAMETER / 2.0f;
         root.radius      = { half_width, half_width, half_width };
 
-        NodeID root_children_index = AssignChildren(PARENT_ROOT);
+        next_free_index = NO_FREE;
+
+        NodeID root_children_index = AddChildren(PARENT_ROOT);
         assert(root_children_index == 0 and "Root nodes children should always start at index 0.");
 }
 
@@ -25,162 +27,227 @@ void PlanetChunkTree::Update() {
                 child_bounds.center = root.center + (PARENT_CENTER_OFFSET[child_index] * child_bounds.radius);
                 Traverse(child_index, child_bounds, TREE_MAX_LOD - 1);
         }
-
-        // std::println("Chunks: {}", planet->chunks.size());
 }
 
 void PlanetChunkTree::Shutdown() {
 }
 
-void PlanetChunkTree::Traverse(NodeID node_index, AABB bounds, u32 lod_level) {
-        if (nodes[node_index].IsEmpty()) return;
+void PlanetChunkTree::CreateNodesChunk(NodeID node_index, AABB bounds, u32 lod) {
+        assert(!nodes[node_index].HasChunk() and "Node should not have chunk before chunk creation");
 
-        // ===== Traverse ===== //
+        nodes[node_index].chunk_index = planet->GenerateChunk(bounds, lod);
 
-        u32   max_lod_distance_index = std::min(lod_level, CHUNK_LOD_DISTANCE_COUNT - 1);
-        float max_lod_distance       = CHUNK_LOD_DISTANCES[max_lod_distance_index];
-        max_lod_distance             = max_lod_distance * max_lod_distance;
+        assert(nodes[node_index].HasChunk() and "Node should have chunk after chunk creation");
+}
 
-        // ===== If in range spawn chunk and return ===== //
+void PlanetChunkTree::DestroyNodesChunk(NodeID node_index) {
+        bool is_empty = planet->chunks[nodes[node_index].chunk_index].IsEmpty();
+        planet->DestroyChunk(nodes[node_index].chunk_index);
+        nodes[node_index].chunk_index = NO_CHUNK;
+        if (is_empty) nodes[node_index].chunk_index = EMPTY_CHUNK;
+}
 
-        float distance_sq = bounds.DistanceSq(planet->target->position);
-        // std::println("Distance: {}", distance_sq);
-        if (distance_sq >= max_lod_distance or lod_level == 0) {
-                // ===== Check Existing ===== //
-                if (nodes[node_index].HasChunk()) {
-                        ChunkID chunk_index = nodes[node_index].chunk_index;
-                        if (planet->chunks[chunk_index].lod_level == lod_level) {
-                                if (planet->chunks[chunk_index].state == PlanetGenerationState::Empty) {
-                                        nodes[node_index].SetEmpty(true);
-                                        planet->DestroyChunk(chunk_index);
-                                        return;
-                                }
+// Split the current node.
+void PlanetChunkTree::Split(NodeID node_index, AABB bounds, u32 lod) {
+        // ===== Check if has Chunk ===== //
 
-                                if (planet->chunks[chunk_index].state == PlanetGenerationState::Empty) {
-                                        nodes[node_index].SetEmpty(true);
-                                        return;
-                                }
+        bool has_chunk    = nodes[node_index].HasChunk();
+        bool has_children = nodes[node_index].HasChildren();
 
-                                if (planet->chunks[chunk_index].state == PlanetGenerationState::Initialised) {
-                                        planet->chunks_to_render.push_back(chunk_index);
-                                }
+        // ===== If has destroy chunk ===== //
+        if (has_chunk) {
+                DestroyNodesChunk(node_index);
 
-                                return;
-                        }
+                if (nodes[node_index].IsEmpty()) return;
 
-                        // ===== Destroy any existing chunks ===== //
-
-                        ResetNode(node_index);
-                }
-
-                // ===== Spawn New Chunk ===== //
-
-                nodes[node_index].chunk_index = planet->GenerateChunk(bounds, lod_level);
-
-                return;
+                assert(!nodes[node_index].HasChunk() and "Node should no longer have a chunk");
         }
 
-        // ===== If out of range for LOD level, Subdivide and Update Children ===== //
+        // ===== If doesnt have children Add ===== //
+        NodeID first_child_index = nodes[node_index].first_child_index;
 
-        NodeID base_child_index = nodes[node_index].first_child_index;
-
-        if (!nodes[node_index].HasChildren()) {
-                base_child_index = AssignChildren(node_index);
+        if (!has_children) {
+                first_child_index = AddChildren(node_index);
         }
 
-        // // ===== Loop and Update Children ===== //
-
-        bool children_are_empty = true;
+        // ===== Traverse Children ===== //
 
         AABB child_bounds{};
         child_bounds.radius = bounds.radius / 2.0f;
 
-        for (NodeID i = 0; i < NODE_CHILD_COUNT; i++) {
-                NodeID child_index = base_child_index + i;
+        bool node_is_empty = true;
 
-                child_bounds.center = bounds.center + (PARENT_CENTER_OFFSET[i] * child_bounds.radius);
-                Traverse(child_index, child_bounds, lod_level - 1);
+        for (NodeID child_offset = 0; child_offset < NODE_CHILD_COUNT; child_offset++) {
+                u32 child_index = first_child_index + child_offset;
 
-                children_are_empty &= nodes[child_index].IsEmpty();
+                child_bounds.center = bounds.center + (PARENT_CENTER_OFFSET[child_offset] * child_bounds.radius);
+
+                Traverse(child_index, child_bounds, lod - 1);
+
+                bool child_is_empty = nodes[child_index].IsEmpty();
+                node_is_empty       = node_is_empty && child_is_empty;
         }
 
-        // ===== If All Children Empty Combine ===== //
+        // ===== Check if all children are empty ===== //
 
-        if (children_are_empty) {
-                ResetNode(node_index);
-                nodes[node_index].SetEmpty(true);
+        if (node_is_empty) {
+                RemoveChildren(node_index);
+                nodes[node_index].chunk_index = EMPTY_CHUNK;
+                assert(nodes[node_index].IsEmpty() and "Node should be empty");
         }
 }
 
-NodeID PlanetChunkTree::AssignChildren(NodeID parent_index) {
-        // ===== Use Existing Slots if Available ===== //
+// Check if we need to generate chunk.
+void PlanetChunkTree::HandleLeaf(NodeID node_index, AABB bounds, u32 lod) {
+        // ===== Check Chunk ===== //
 
-        NodeID child_index = 0;
+        bool has_chunk    = nodes[node_index].HasChunk();
+        bool has_children = nodes[node_index].HasChildren();
 
-        if (next_free_index == 0) {
-                child_index = (NodeID)nodes.size();
-                nodes.resize(child_index + NODE_CHILD_COUNT);
+        assert(!(has_chunk and has_children) and "Node should never have a chunk and a child at the same time");
 
-                for (NodeID i = 0; i < NODE_CHILD_COUNT; i++) {
-                        nodes[child_index + i] = {
-                                .first_child_index = NO_CHILDREN,
-                                .chunk_index       = NO_CHUNK,
-                        };
+        // ===== Is current chunk wanted lod ===== //
+
+        if (has_chunk) {
+                ChunkID chunk_index = nodes[node_index].chunk_index;
+
+                // == Check if the chunk is empty == //
+
+                assert(!nodes[node_index].IsEmpty() and "Node should not get update if its empty");
+
+                if (planet->chunks[chunk_index].IsEmpty()) {
+                        DestroyNodesChunk(node_index);
+                        assert(nodes[node_index].IsEmpty() and "Node with empty chunk should be empty");
+                        return;
                 }
 
-                assert(parent_indices.size() == child_index / NODE_CHILD_COUNT);
-                parent_indices.emplace_back(parent_index);
-        } else {
+                bool current_chunk_is_wanted_lod = planet->chunks[chunk_index].lod == lod;
 
-                child_index     = next_free_index;
-                next_free_index = parent_indices[next_free_index / NODE_CHILD_COUNT];
+                if (current_chunk_is_wanted_lod) {
+                        if (planet->chunks[chunk_index].IsRenderReady()) {
+                                // == Check if its ready to render == //
+                                planet->chunks_to_render.push_back(chunk_index);
+                        }
 
-                // ===== Reset nodes ===== //
+                        return;
+                };
 
-                for (NodeID i = 0; i < NODE_CHILD_COUNT; i++) {
-                        nodes[child_index + i].first_child_index = NO_CHILDREN;
-                        nodes[child_index + i].chunk_index       = NO_CHUNK;
-                }
-
-                parent_indices[child_index / NODE_CHILD_COUNT] = parent_index;
+                DestroyNodesChunk(node_index);
+                if (planet->chunks[chunk_index].IsEmpty()) return;
         }
 
-        if (parent_index != PARENT_ROOT) nodes[parent_index].first_child_index = child_index;
-        return child_index;
-}
+        // ===== Destory Children ===== //
 
-void PlanetChunkTree::RemoveChildren(NodeID parent_index) {
-        // ===== Get Child Index ===== //
-
-        if (!nodes[parent_index].HasChildren()) return;
-        NodeID child_index = nodes[parent_index].first_child_index;
-
-        // ===== Reset Children ===== //
-
-        for (NodeID i = 0; i < NODE_CHILD_COUNT; i++) {
-                nodes[child_index + i].first_child_index = NO_CHILDREN;
-                nodes[child_index + i].chunk_index       = NO_CHUNK;
-        }
-
-        // ===== Store Free Index in parent index ===== //
-
-        parent_indices[child_index / NODE_CHILD_COUNT] = next_free_index;
-        next_free_index                                = child_index;
-}
-
-void PlanetChunkTree::ResetNode(NodeID node_index) {
-        if (nodes[node_index].HasChildren()) {
-                for (NodeID i = 0; i < NODE_CHILD_COUNT; i++) {
-                        ResetNode(nodes[node_index].first_child_index + i);
-                }
-
+        if (has_children) {
                 RemoveChildren(node_index);
         }
 
-        if (nodes[node_index].HasChunk()) {
-                planet->DestroyChunk(nodes[node_index].chunk_index);
-                nodes[node_index].chunk_index = NO_CHUNK;
+        // ===== Create Chunk ===== //
+
+        assert(!nodes[node_index].HasChunk() and !nodes[node_index].HasChildren() and "Node should be empty before creating chunk");
+
+        CreateNodesChunk(node_index, bounds, lod);
+}
+
+void PlanetChunkTree::Traverse(NodeID node_index, AABB bounds, u32 lod) {
+        // ===== If its marked as empty there is nothing to do ===== //
+
+        if (nodes[node_index].IsEmpty()) return;
+
+        // ===== Check If Node Splits ===== //
+
+        // == Check Range == //
+
+        u32   range_index    = std::min(lod, CHUNK_LOD_DISTANCE_COUNT - 1);
+        float split_range_sq = CHUNK_LOD_DISTANCES[range_index] * CHUNK_LOD_DISTANCES[range_index];
+
+        float node_distance_sq = bounds.DistanceSq(planet->target->position);
+
+        bool node_splits = node_distance_sq < split_range_sq;
+
+        // == Check LOD == //
+
+        node_splits = node_splits && lod != 0;
+
+        // == Handle == //
+
+        if (node_splits) {
+                Split(node_index, bounds, lod);
+        } else {
+                HandleLeaf(node_index, bounds, lod);
         }
+}
+
+NodeID PlanetChunkTree::AddChildren(NodeID node_index) {
+        // ===== Use Existing Slots if Available ===== //
+
+        NodeID first_child_index = 0;
+
+        if (next_free_index == NO_FREE) {
+                // ===== Append New Nodes ===== //
+
+                first_child_index = (NodeID)nodes.size();
+                nodes.resize(first_child_index + NODE_CHILD_COUNT);
+
+                assert(parent_indices.size() == first_child_index / NODE_CHILD_COUNT);
+                parent_indices.emplace_back(node_index);
+        } else {
+                // ===== Reuse Nodes ===== //
+
+                u32 temp_index = parent_indices[next_free_index];
+
+                parent_indices[next_free_index] = node_index;
+                first_child_index               = next_free_index * NODE_CHILD_COUNT;
+                next_free_index                 = temp_index;
+        }
+
+        // == Initialize Children == //
+
+        for (NodeID child_offset = 0; child_offset < NODE_CHILD_COUNT; child_offset++) {
+                NodeID child_index = first_child_index + child_offset;
+
+                nodes[child_index].first_child_index = NO_CHILDREN;
+                nodes[child_index].chunk_index       = NO_CHUNK;
+        }
+
+        // == Update Node - Root doesnt have node == //
+
+        if (node_index == PARENT_ROOT) return first_child_index;
+
+        nodes[node_index].first_child_index = first_child_index;
+        assert(nodes[node_index].HasChildren() and "Node should have children after adding them");
+        return first_child_index;
+}
+
+void PlanetChunkTree::RemoveChildren(NodeID node_index) {
+        assert(nodes[node_index].HasChildren() and "Trying to remove children from node without children");
+
+        // ===== Get Child Index ===== //
+
+        NodeID first_child_index = nodes[node_index].first_child_index;
+
+        // ===== Reset Children ===== //
+
+        for (NodeID child_offset = 0; child_offset < NODE_CHILD_COUNT; child_offset++) {
+                NodeID child_index = first_child_index + child_offset;
+
+                // ===== Reset childs children ===== //
+
+                if (nodes[child_index].HasChildren()) RemoveChildren(child_index);
+
+                // ===== Destroy Child Chunk if Exists ===== //
+
+                if (nodes[child_index].HasChunk() and !nodes[child_index].IsEmpty()) DestroyNodesChunk(child_index);
+        }
+
+        nodes[node_index].first_child_index = NO_CHILDREN;
+
+        // ===== Store Free Index in parent index ===== //
+
+        parent_indices[first_child_index / NODE_CHILD_COUNT] = next_free_index;
+        next_free_index                                      = first_child_index / NODE_CHILD_COUNT;
+
+        assert(!nodes[node_index].HasChildren() and "Should not have children after we remove them");
 }
 
 void Planet::Init(GameContext* _game_context, GameObject* _target) {
@@ -267,10 +334,6 @@ void Planet::Init(GameContext* _game_context, GameObject* _target) {
 
         // ===== Create Pipelines ===== //
 
-        constexpr const char* entry_point_names[GENERATION_PASS_COUNT] = {
-                "Pass1", "Pass2", "Pass3", "Pass4", "Pass5",
-        };
-
         VkComputePipelineCreateInfo pipeline_infos[GENERATION_PASS_COUNT];
 
         for (u32 i = 0; i < GENERATION_PASS_COUNT; i++) {
@@ -278,7 +341,7 @@ void Planet::Init(GameContext* _game_context, GameObject* _target) {
                         .sType  = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
                         .stage  = VK_SHADER_STAGE_COMPUTE_BIT,
                         .module = shader_module,
-                        .pName  = entry_point_names[i],
+                        .pName  = ENTRY_POINT_NAMES[i],
                 };
 
                 pipeline_infos[i] = {
@@ -294,22 +357,13 @@ void Planet::Init(GameContext* _game_context, GameObject* _target) {
 
         // ===== Create Constant Buffers ===== //
 
-        VmaAllocationCreateFlags allocation_flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
-                                                    VMA_ALLOCATION_CREATE_HOST_ACCESS_ALLOW_TRANSFER_INSTEAD_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT;
+        VmaAllocationCreateFlags allocation_flags = 0;
 
         // == Edge Lookup == //
 
         edge_lookup_buffer =
                 CreateGPUBuffer(game_context->vulkan_device, game_context->vulkan_allocator, sizeof(int) * 256, game_context->transfer_queue_family,
                                 VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, allocation_flags);
-
-        // Dont need this?
-        // VkBufferDeviceAddressInfo edge_lookup_buffer_address_info{
-        //         .sType  = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO,
-        //         .buffer = edge_lookup_buffer.buffer,
-        // };
-
-        // edge_lookup_buffer.device_address = vkGetBufferDeviceAddress(game_context->vulkan_device, &edge_lookup_buffer_address_info);
 
         // == Write Data == //
 
@@ -367,22 +421,19 @@ void Planet::Init(GameContext* _game_context, GameObject* _target) {
 
         tree.Init(this);
 
-        // Index 0 of chunks is invalid
-        chunks.push_back({});
-
-        // chunks_in_progress.push_back({});
+        next_free_chunk = NO_FREE;
 }
 
 void Planet::Shutdown() {
         tree.Shutdown();
 
         for (ChunkID i = 0; i < chunks.size(); i++) {
-                // if (chunks[i].state != PlanetGenerationState::Initialised) continue;
+                chunks[i].state = PlanetGenerationState::None;
                 DestroyChunk(i);
         }
 
         for (ChunkID i = 0; i < chunks_in_progress.size(); i++) {
-                FreeChunkInProgress(chunks_in_progress[i]);
+                FreeChunkInProgress(i);
         }
 
         vkDestroyCommandPool(game_context->vulkan_device, command_pool, nullptr);
@@ -396,224 +447,123 @@ void Planet::Shutdown() {
         DestroyGPUBuffer(game_context->vulkan_device, triangle_lookup_buffer, game_context->vulkan_allocator);
 }
 
+void Planet::ProcessChunkIfAvailable(PlanetChunkProgress& chunk_progress) {
+        // ===== Find a command buffer ===== //
+
+        u32 command_buffer_index = GetCommandBufferIndex();
+
+        if (command_buffer_index == u32_max) {
+                return;
+        }
+
+        chunk_progress.resource_index = command_buffer_index;
+
+        // ===== Create Semaphore ===== //
+
+        VkSemaphoreTypeCreateInfo timeline_info{};
+        timeline_info.sType         = VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO;
+        timeline_info.semaphoreType = VK_SEMAPHORE_TYPE_TIMELINE;
+        timeline_info.initialValue  = (u64)PlanetProcessingStages::StageOne;
+
+        VkSemaphoreCreateInfo semaphore_info{
+                .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
+                .pNext = &timeline_info,
+        };
+
+        VkSemaphore semaphore;
+        VkResult    res = vkCreateSemaphore(game_context->vulkan_device, &semaphore_info, nullptr, &semaphore);
+
+        chunk_progress.semaphore = semaphore;
+
+        if (res != VK_SUCCESS) {
+                std::println("Failed Creating Chunk Semaphore: {}", (int)res);
+                exit(1);
+        }
+
+        // ===== Allocate Intermediate Buffers ===== //
+
+        // == Edges Buffer == //
+
+        VmaAllocationCreateFlags allocation_flags = 0;
+
+        chunk_progress.edge_buffer =
+                CreateGPUBuffer(game_context->vulkan_device, game_context->vulkan_allocator, EDGE_BUFFER_SIZE, game_context->compute_queue_family,
+                                VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, allocation_flags, VMA_MEMORY_USAGE_AUTO,
+                                VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+
+        // == Edge Sums Buffer == //
+
+        allocation_flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_RANDOM_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT;
+
+        chunk_progress.cell_sums_buffer =
+                CreateGPUBuffer(game_context->vulkan_device, game_context->vulkan_allocator, CELL_SUM_BUFFER_SIZE, game_context->compute_queue_family,
+                                VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT, allocation_flags, VMA_MEMORY_USAGE_AUTO, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+
+        // == Set Info == //
+
+        chunk_progress.info.edges     = chunk_progress.edge_buffer.device_address;
+        chunk_progress.info.cell_sums = chunk_progress.cell_sums_buffer.device_address;
+
+        // ===== Start Stage One ===== //
+
+        RecordStageOne(chunk_progress);
+
+        // // ===== Signal Semaphore ===== //
+
+        chunks[chunk_progress.chunk_index].state = PlanetGenerationState::Processing;
+}
+
 void Planet::UpdateStates() {
-        if (chunks_in_progress.size() == 0) return;
-        for (u64 i = chunks_in_progress.size() - 1; i > 0; i--) {
-                // std::println("i: {}, size: {}", i, chunks_in_progress.size());
+        i32 chunk_in_progress_count = chunks_in_progress.size();
 
-                PlanetChunkProgress& chunk_progress = chunks_in_progress[i];
+        // ===== Loop chunks in progress in reverse ===== //
 
-                PlanetGenerationState chunk_state = chunks[chunk_progress.chunk_index].state;
+        for (i32 chunk_progress_index = chunk_in_progress_count - 1; chunk_progress_index > -1; chunk_progress_index--) {
+                PlanetChunkProgress&  chunk_progress = chunks_in_progress[chunk_progress_index];
+                PlanetGenerationState chunk_state    = chunks[chunk_progress.chunk_index].state;
 
-                switch (chunk_state) {
+                // Dont bother loading if we havnt already started and its going to be destroyed
+                if (chunk_state == PlanetGenerationState::WaitingOnDestroy) {
+                        FreeChunkInProgress(chunk_progress_index);
+                        continue;
+                }
 
-                        // ===== Generation States ===== //
-                        case PlanetGenerationState::WaitingOnGeneration:
-                                {
-                                        // GPU: Nothing
-                                        // CPU: Find Command Buffer and Memory for Generation
+                if (chunk_state == PlanetGenerationState::Waiting) {
+                        ProcessChunkIfAvailable(chunk_progress);
+                        continue;
+                }
 
-                                        // ===== Find a command buffer ===== //
+                // == Get Current Processing Stage == //
+                PlanetProcessingStages chunk_stage{};
 
-                                        u32 command_buffer_index = GetCommandBufferIndex();
-                                        if (command_buffer_index == u32_max) {
-                                                break;
-                                        }
-                                        chunk_progress.command_buffer_index = command_buffer_index;
+                VkSemaphore semaphore = chunk_progress.semaphore;
 
-                                        // std::println("Start Chunk");
+                uint64_t value;
+                vkGetSemaphoreCounterValue(game_context->vulkan_device, semaphore, &value);
+                chunk_stage = static_cast<PlanetProcessingStages>(value);
+                assert(chunk_stage != PlanetProcessingStages::Invalid and "Chunk in progress is in an invalid stage");
 
-                                        // ===== Create Sync ===== //
+                // NOTE: Semaphore used before we actually know the resource index!
 
-                                        VkResult res{};
+                // == Handle Stage == //
 
-                                        VkSemaphore semaphore;
-
-                                        VkSemaphoreTypeCreateInfo timeline_info{};
-                                        timeline_info.sType         = VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO;
-                                        timeline_info.pNext         = nullptr;
-                                        timeline_info.semaphoreType = VK_SEMAPHORE_TYPE_TIMELINE;
-                                        timeline_info.initialValue  = (u64)PlanetGenerationState::None;
-
-                                        VkSemaphoreCreateInfo semaphore_info{
-                                                .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
-                                                .pNext = &timeline_info,
-                                        };
-
-                                        res = vkCreateSemaphore(game_context->vulkan_device, &semaphore_info, nullptr, &semaphore);
-                                        if (res != VK_SUCCESS) {
-                                                std::println("Failed Creating Chunk Semaphore");
-                                                exit(res);
-                                        }
-
-                                        std::println("Semaphore Created: {}", chunk_progress.chunk_index);
-
-                                        chunk_progress.semaphore = semaphore;
-
-                                        // ===== Allocate Intermediate Buffers ===== //
-
-                                        // == Useful Values == //
-
-                                        u32 x_edges = CHUNK_CELLS;
-                                        u32 y_edges = CHUNK_CELLS + 1;
-                                        u32 z_edges = CHUNK_CELLS + 1;
-
-                                        u32 edge_count = x_edges * y_edges * z_edges;
-                                        [[maybe_unused]]
-                                        u32 cell_count = CHUNK_CELLS * CHUNK_CELLS * CHUNK_CELLS;
-                                        u32 row_count  = y_edges * z_edges;
-
-                                        // == Edges Buffer - GPU read/write only == //
-
-                                        // VmaAllocationCreateFlags allocation_flags = 0;
-                                        VmaAllocationCreateFlags allocation_flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
-                                                                                    VMA_ALLOCATION_CREATE_HOST_ACCESS_ALLOW_TRANSFER_INSTEAD_BIT |
-                                                                                    VMA_ALLOCATION_CREATE_MAPPED_BIT;
-
-                                        chunk_progress.edge_buffer =
-                                                CreateGPUBuffer(game_context->vulkan_device, game_context->vulkan_allocator, sizeof(u32) * edge_count,
-                                                                game_context->compute_queue_family,
-                                                                VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
-                                                                allocation_flags, VMA_MEMORY_USAGE_AUTO, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-
-                                        // == Edge Sums Buffer - Host read == //
-
-                                        allocation_flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_RANDOM_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT;
-
-                                        chunk_progress.cell_sums_buffer =
-                                                CreateGPUBuffer(game_context->vulkan_device, game_context->vulkan_allocator,
-                                                                sizeof(EdgeSumInfo) * CHUNK_CELLS * CHUNK_CELLS, game_context->compute_queue_family,
-                                                                VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT, allocation_flags, VMA_MEMORY_USAGE_AUTO,
-                                                                VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-
-                                        // == Set Info == //
-
-                                        chunk_progress.info.edges     = chunk_progress.edge_buffer.device_address;
-                                        chunk_progress.info.cell_sums = chunk_progress.cell_sums_buffer.device_address;
-
-                                        // ===== Record Commands ===== //
-
-                                        RecordStageOne(chunk_progress);
-
-                                        // ===== Signal Semaphore ===== //
-
-                                        VkSemaphoreSignalInfo signal_info;
-                                        signal_info.sType     = VK_STRUCTURE_TYPE_SEMAPHORE_SIGNAL_INFO;
-                                        signal_info.pNext     = NULL;
-                                        signal_info.semaphore = chunk_progress.semaphore;
-                                        signal_info.value     = (u64)PlanetGenerationState::ProcessingStageOne;
-
-                                        vkSignalSemaphore(game_context->vulkan_device, &signal_info);
-
-                                        // Set Stage
-                                        chunks[chunk_progress.chunk_index].state = PlanetGenerationState::ProcessingStageOne;
-                                }
+                switch (chunk_stage) {
+                        case PlanetProcessingStages::Invalid:
+                                exit(200);
+                        case PlanetProcessingStages::StageOne:
+                                break; // GPU
+                        case PlanetProcessingStages::AllocateBuffers:
+                                AllocateBuffers(chunk_progress);
                                 break;
-                        case PlanetGenerationState::ProcessingStageOne:
-                                {
-                                        // GPU: Count Triangles and Vertices
-                                        // CPU: Nothing
-
-                                        // Query Semaphore
-
-                                        // std::println("Stage One");
-
-                                        uint64_t value;
-                                        vkGetSemaphoreCounterValue(game_context->vulkan_device, chunk_progress.semaphore, &value);
-                                        chunks[chunk_progress.chunk_index].state = (PlanetGenerationState)value;
-
-                                        // std::println("Index: {}, Value: {}, Waiting On: {}", chunk_progress.chunk_index, value,
-                                        // (u32)PlanetGenerationState::ProcessingStageTwo);
-                                        // chunk_progress.edge_buffer.Print();
-                                        // std::println("");
-                                }
+                        case PlanetProcessingStages::StageTwo:
+                                break; // GPU
+                        case PlanetProcessingStages::Finished:
+                                chunks[chunk_progress.chunk_index].state = PlanetGenerationState::Initialised;
+                                FreeChunkInProgress(chunk_progress_index);
                                 break;
-                        case PlanetGenerationState::ProcessingStageTwo:
-                                {
-                                        // GPU: Nothing
-                                        // CPU: Sum triangle and vertex offsets
-
-                                        // std::println("Stage Two");
-
-                                        StartStageTwo(chunk_progress);
-                                }
-                                break;
-                        case PlanetGenerationState::AllocateBuffers:
-                                {
-                                        AllocateBuffers(chunk_progress);
-                                }
-                                break;
-                        case PlanetGenerationState::ProcessingStageThree:
-                                {
-                                        // GPU: Write Output Data
-                                        // CPU: Nothing
-
-                                        // std::println("Stage Three");
-
-                                        uint64_t value;
-                                        vkGetSemaphoreCounterValue(game_context->vulkan_device, chunk_progress.semaphore, &value);
-                                        chunks[chunk_progress.chunk_index].state = (PlanetGenerationState)value;
-                                }
-                                break;
-                        case PlanetGenerationState::FinishingProcessing:
-                                {
-                                        // GPU: Nothing
-                                        // CPU: Free resource and add chunk to Planet.
-
-                                        // std::println("Free Chunk");
-
-                                        VkSemaphoreSignalInfo signal_info;
-                                        signal_info.sType     = VK_STRUCTURE_TYPE_SEMAPHORE_SIGNAL_INFO;
-                                        signal_info.pNext     = NULL;
-                                        signal_info.semaphore = chunk_progress.semaphore;
-                                        signal_info.value     = (u32)PlanetGenerationState::Initialised;
-
-                                        vkSignalSemaphore(game_context->vulkan_device, &signal_info);
-                                        chunks[chunk_progress.chunk_index].state = PlanetGenerationState::Initialised;
-                                }
-                                break;
-
-                        case PlanetGenerationState::WaitingOnDestroy:
-                                std::println("Wait On Destroy: {}", chunk_progress.chunk_index);
-
-                                // ===== Set Free Index ===== //
-
-                                chunks[chunk_progress.chunk_index].next_free_index = next_free_chunk;
-                                next_free_chunk                                    = chunk_progress.chunk_index;
-
-                                FreeChunkInProgress(chunk_progress);
-                                chunks_in_progress[i] = std::move(chunks_in_progress.back());
-                                chunks_in_progress.pop_back();
-
-                                break;
-
-                        // ===== Inactive States ===== //
-                        case PlanetGenerationState::Initialised:
-                                std::println("Empty Or Initialized: {}", chunk_progress.chunk_index);
-
-                                FreeChunkInProgress(chunk_progress);
-                                chunks_in_progress[i] = std::move(chunks_in_progress.back());
-                                chunks_in_progress.pop_back();
-
-                                break;
-                        case PlanetGenerationState::Empty:
-                                std::println("Empty Or Initialized: {}", chunk_progress.chunk_index);
-
-                                // ===== Set Free Index ===== //
-
-                                chunks[chunk_progress.chunk_index].next_free_index = next_free_chunk;
-                                next_free_chunk                                    = chunk_progress.chunk_index;
-
-                                FreeChunkInProgress(chunk_progress);
-                                chunks_in_progress[i] = std::move(chunks_in_progress.back());
-                                chunks_in_progress.pop_back();
-
-                                break;
-
-                        // ===== Default ===== //
                         default:
-                                std::println("Unexpected Stage in Planet Generation: {}, {}", i, chunks.size());
-                                exit(1);
+                                std::println("Error: Unexpected chunk processing stage: {}", (int)chunk_stage);
+                                exit(200);
                 }
         }
 }
@@ -659,9 +609,7 @@ void Planet::ReleaseCommandBufferIndex(u32 index) {
         free_command_buffers.push_back(index);
 }
 
-ChunkID Planet::GenerateChunk(AABB bounds, u32 lod_level) {
-        // std::println("Generate: {}, {}, {}", bounds.center, bounds.radius, lod_level);
-
+ChunkID Planet::GenerateChunk(AABB bounds, u32 lod) {
         // ===== Initialise Creation Info ===== //
 
         Vec3 chunk_position = bounds.center - bounds.radius;
@@ -670,26 +618,18 @@ ChunkID Planet::GenerateChunk(AABB bounds, u32 lod_level) {
                 .edge_case_lookup = edge_lookup_buffer.device_address,
                 .triangle_lookup  = triangle_lookup_buffer.device_address,
 
-                .edges            = 0, // edge_buffer.device_address,
-                .cell_sums        = 0, // cell_sums_buffer.device_address,
-                .triangle_normals = 0, // TODO
-
-                .indices  = 0, // Set later
-                .vertices = 0, // Set later
-
                 .chunk_cells = CHUNK_CELLS,
-                .chunk_dims  = (u32)bounds.radius.x * 2,
+                .chunk_dims  = (u32)(bounds.radius.x * 2),
                 .position    = chunk_position,
-                .seed        = 0,
+                .seed        = PLANET_SEED,
         };
 
-        // triangle_lookup_buffer.Print();
 
         // ===== Find a chunk index ===== //
 
         ChunkID chunk_index = 0;
 
-        if (next_free_chunk == 0) {
+        if (next_free_chunk == NO_FREE) {
                 chunk_index = (u32)chunks.size();
                 chunks.push_back({});
         } else {
@@ -697,69 +637,85 @@ ChunkID Planet::GenerateChunk(AABB bounds, u32 lod_level) {
                 next_free_chunk = chunks[next_free_chunk].next_free_index;
         }
 
-        chunks[chunk_index].state     = PlanetGenerationState::WaitingOnGeneration;
-        chunks[chunk_index].position  = bounds.center - bounds.radius;
-        chunks[chunk_index].lod_level = lod_level;
+        // ===== Set Chunk State ===== //
 
-        chunks_in_progress.emplace_back(chunk_index, info, GPUBuffer{}, GPUBuffer{}, VK_NULL_HANDLE);
+        chunks[chunk_index].state    = PlanetGenerationState::Waiting;
+        chunks[chunk_index].position = chunk_position;
+        chunks[chunk_index].lod      = lod;
+
+        chunks_in_progress.emplace_back(chunk_index, info, VK_NULL_HANDLE, GPUBuffer{}, GPUBuffer{}, GPUBuffer{}, u32_max);
 
         return chunk_index;
 }
 
-// NOTE: Not destroying something! MEMORY LEAK
-void Planet::DestroyChunk(ChunkID index) {
+void Planet::DestroyChunk(ChunkID chunk_index) {
         // ===== Check if we can Destroy Now ===== //
 
-        PlanetGenerationState chunk_state = chunks[index].state;
+        PlanetGenerationState chunk_state = chunks[chunk_index].state;
 
         bool can_destroy = false;
 
         // ===== Check If Resources In Use ===== //
 
-        if (chunk_state == PlanetGenerationState::Initialised or chunk_state == PlanetGenerationState::WaitingForRenderFinish) {
-
-                // ===== If Not In Use Can Destroy ===== //
-
-                can_destroy |= (chunks[index].model.last_frame_rendered <= game_context->GetLastFinishedFrame());
-                chunks[index].state = PlanetGenerationState::WaitingForRenderFinish;
+        switch (chunk_state) {
+                case PlanetGenerationState::None:
+                        can_destroy = true;
+                        break;
+                case PlanetGenerationState::Waiting:
+                case PlanetGenerationState::Initialised:
+                        chunks[chunk_index].state = PlanetGenerationState::WaitingOnDestroy;
+                        break;
+                case PlanetGenerationState::WaitingOnDestroy:
+                        can_destroy = (chunks[chunk_index].model.last_frame_rendered < game_context->GetLastFinishedFrame());
+                        can_destroy = can_destroy or (chunks[chunk_index].model.meshes.size() > 0 and chunks[chunk_index].model.meshes[0].index_count == 0);
+                        break;
         }
 
-        // ===== Check If In Destroyable State ===== //
+        if (can_destroy) {
+                // ===== Destroy Chunk ===== //
 
-        can_destroy |= (chunk_state == PlanetGenerationState::None);
-        can_destroy |= (chunk_state == PlanetGenerationState::Empty);
+                chunks[chunk_index].model.Destroy(*game_context);
+                if (chunks[chunk_index].index_offsets) free(chunks[chunk_index].index_offsets);
 
-        // ===== If Cant Destroy Add To List ===== //
+                chunks[chunk_index] = {};
 
-        if (!can_destroy) {
-                if (destroy_count < chunks_to_destroy.size()) {
-                        chunks_to_destroy[destroy_count] = index;
-                } else {
-                        chunks_to_destroy.push_back(index);
-                }
+                chunks[chunk_index].next_free_index = next_free_chunk;
+                next_free_chunk                     = chunk_index;
 
-                destroy_count++;
                 return;
         }
 
-        // ===== Destroy Chunk ===== //
+        // ===== Add back to list if cant destroy ===== //
 
-        chunks[index].model.Destroy(*game_context);
-        if (chunks[index].index_offsets) free(chunks[index].index_offsets);
+        if (destroy_count < chunks_to_destroy.size()) chunks_to_destroy[destroy_count] = chunk_index;
+        else chunks_to_destroy.push_back(chunk_index);
 
-        chunks[index]       = {}; // Clear it
-        chunks[index].state = PlanetGenerationState::WaitingOnDestroy;
+        destroy_count++;
 }
 
-void Planet::FreeChunkInProgress(PlanetChunkProgress& chunk_progress) {
-        ReleaseCommandBufferIndex(chunk_progress.command_buffer_index);
+void Planet::FreeChunkInProgress(u32 index) {
+        PlanetChunkProgress& chunk_progress = chunks_in_progress[index];
 
-        vkDestroySemaphore(game_context->vulkan_device, chunk_progress.semaphore, nullptr);
-        std::println("Semaphore Destroyed: {}", chunk_progress.chunk_index);
+        // ===== Set semaphore to invalid state ===== //
 
-        // Free intermediate buffers?
+        if (chunk_progress.semaphore != VK_NULL_HANDLE) {
+                vkDestroySemaphore(game_context->vulkan_device, chunk_progress.semaphore, nullptr);
+                ReleaseCommandBufferIndex(chunk_progress.resource_index);
+        }
+
+        // ===== Release resource index ===== //
+
+
+        // ===== Free Resources ===== //
+
         DestroyGPUBuffer(game_context->vulkan_device, chunk_progress.edge_buffer, game_context->vulkan_allocator);
         DestroyGPUBuffer(game_context->vulkan_device, chunk_progress.cell_sums_buffer, game_context->vulkan_allocator);
+        DestroyGPUBuffer(game_context->vulkan_device, chunk_progress.normal_buffer, game_context->vulkan_allocator);
+
+        // ===== Remove Chunk In Progress ===== //
+
+        chunks_in_progress[index] = std::move(chunks_in_progress.back());
+        chunks_in_progress.pop_back();
 }
 
 // NOTE: I think this could easily have pre-recorded command buffers.
@@ -771,19 +727,9 @@ void Planet::FreeChunkInProgress(PlanetChunkProgress& chunk_progress) {
 void Planet::RecordStageOne(PlanetChunkProgress& chunk_progress) {
         VkResult res{};
 
-        // std::println("Planet Info: {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}", chunk_progress.info.seed, chunk_progress.info.position,
-        //              chunk_progress.info.chunk_cells, chunk_progress.info.chunk_dims,
-
-        //              chunk_progress.info.edge_case_lookup, chunk_progress.info.triangle_lookup,
-
-        //              chunk_progress.info.edges, chunk_progress.info.cell_sums, chunk_progress.info.triangle_normals,
-
-        //              chunk_progress.info.indices, chunk_progress.info.vertices);
-
         // ===== Get and Begin Command Buffer ===== //
 
-        VkCommandBuffer command_buffer = command_buffers[chunk_progress.command_buffer_index];
-        // std::println("CB: {}", chunk_progress.command_buffer_index);
+        VkCommandBuffer command_buffer = command_buffers[chunk_progress.resource_index];
 
         VkCommandBufferBeginInfo command_buffer_begin_info{
                 .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
@@ -795,93 +741,69 @@ void Planet::RecordStageOne(PlanetChunkProgress& chunk_progress) {
 
         // ===== Record Commands ===== //
 
-        u32 edge_count       = chunk_progress.info.chunk_cells + 1;
-        u32 dispatch_count_x = (edge_count + (THREAD_GROUP_X - 1)) / THREAD_GROUP_X;
-        u32 dispatch_count_y = (edge_count + (THREAD_GROUP_Y - 1)) / THREAD_GROUP_Y;
+        constexpr u32 PASS_1_X_DISPATCH_COUNT = (CHUNK_EDGES + (THREAD_GROUP_X - 1)) / THREAD_GROUP_X;
+        constexpr u32 PASS_1_Y_DISPATCH_COUNT = (CHUNK_EDGES + (THREAD_GROUP_Y - 1)) / THREAD_GROUP_Y;
 
         // == Pass One == //
 
-        vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, pipelines[0]);
+        vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, pipelines[(u32)PlanetPipelineID::Pass1]);
         vkCmdPushConstants(command_buffer, pipeline_layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(PlanetCreationInfo), &chunk_progress.info);
-        vkCmdDispatch(command_buffer, dispatch_count_x, dispatch_count_y, THREAD_GROUP_Z);
+        vkCmdDispatch(command_buffer, PASS_1_X_DISPATCH_COUNT, PASS_1_Y_DISPATCH_COUNT, THREAD_GROUP_Z);
 
-        // std::println("Dispatch: {}, {}, {}", dispatch_count_x, dispatch_count_y, THREAD_GROUP_Z);
-
-        // == Make sure edge buffer is finished being written too, before trying to read == //
+        // == Wait On Edges == //
 
         VkBufferMemoryBarrier2 buffer_barrier{
-                .sType               = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2,
-                .pNext               = nullptr,
-                .srcStageMask        = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
-                .srcAccessMask       = VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT,
-                .dstStageMask        = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
-                .dstAccessMask       = VK_ACCESS_2_SHADER_READ_BIT,
-                .srcQueueFamilyIndex = game_context->compute_queue_family,
-                .dstQueueFamilyIndex = game_context->compute_queue_family,
-                .buffer              = chunk_progress.edge_buffer.buffer,
-                .offset              = 0,
-                .size                = VK_WHOLE_SIZE,
+                .sType         = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2,
+                .srcStageMask  = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
+                .srcAccessMask = VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT,
+                .dstStageMask  = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
+                .dstAccessMask = VK_ACCESS_2_SHADER_READ_BIT,
+                .buffer        = chunk_progress.edge_buffer.buffer,
+                .offset        = 0,
+                .size          = VK_WHOLE_SIZE,
         };
 
         VkDependencyInfo dependency_info{
                 .sType                    = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
-                .pNext                    = nullptr,
-                .dependencyFlags          = 0,
-                .memoryBarrierCount       = 0,
-                .pMemoryBarriers          = nullptr,
                 .bufferMemoryBarrierCount = 1,
                 .pBufferMemoryBarriers    = &buffer_barrier,
-                .imageMemoryBarrierCount  = 0,
-                .pImageMemoryBarriers     = nullptr,
         };
 
         vkCmdPipelineBarrier2(command_buffer, &dependency_info);
 
         // == Pass Two == //
 
-        dispatch_count_x = (chunk_progress.info.chunk_cells + (THREAD_GROUP_X - 1)) / THREAD_GROUP_X;
-        dispatch_count_y = (chunk_progress.info.chunk_cells + (THREAD_GROUP_Y - 1)) / THREAD_GROUP_Y;
+        constexpr u32 PASS_2_X_DISPATCH_COUNT = (CHUNK_CELLS + (THREAD_GROUP_X - 1)) / THREAD_GROUP_X;
+        constexpr u32 PASS_2_Y_DISPATCH_COUNT = (CHUNK_CELLS + (THREAD_GROUP_Y - 1)) / THREAD_GROUP_Y;
 
-        vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, pipelines[1]);
+        vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, pipelines[(u32)PlanetPipelineID::Pass2]);
         vkCmdPushConstants(command_buffer, pipeline_layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(PlanetCreationInfo), &chunk_progress.info);
-        vkCmdDispatch(command_buffer, dispatch_count_x, dispatch_count_y, THREAD_GROUP_Z);
+        vkCmdDispatch(command_buffer, PASS_2_X_DISPATCH_COUNT, PASS_2_Y_DISPATCH_COUNT, THREAD_GROUP_Z);
 
-        // == Make sure edge sum buffer is finished being written too, before trying to read == //
+        // == Wait On Cell Sums == //
 
         buffer_barrier = {
-                .sType               = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2,
-                .pNext               = nullptr,
-                .srcStageMask        = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
-                .srcAccessMask       = VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT,
-                .dstStageMask        = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
-                .dstAccessMask       = VK_ACCESS_2_SHADER_READ_BIT,
-                .srcQueueFamilyIndex = game_context->compute_queue_family,
-                .dstQueueFamilyIndex = game_context->compute_queue_family,
-                .buffer              = chunk_progress.cell_sums_buffer.buffer,
-                .offset              = 0,
-                .size                = VK_WHOLE_SIZE,
+                .sType         = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2,
+                .srcStageMask  = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
+                .srcAccessMask = VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT,
+                .dstStageMask  = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
+                .dstAccessMask = VK_ACCESS_2_SHADER_READ_BIT,
+                .buffer        = chunk_progress.cell_sums_buffer.buffer,
+                .offset        = 0,
+                .size          = VK_WHOLE_SIZE,
         };
 
         dependency_info = {
                 .sType                    = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
-                .pNext                    = nullptr,
-                .dependencyFlags          = 0,
-                .memoryBarrierCount       = 0,
-                .pMemoryBarriers          = nullptr,
                 .bufferMemoryBarrierCount = 1,
                 .pBufferMemoryBarriers    = &buffer_barrier,
-                .imageMemoryBarrierCount  = 0,
-                .pImageMemoryBarriers     = nullptr,
         };
 
         vkCmdPipelineBarrier2(command_buffer, &dependency_info);
 
         // == Pass Three == //
 
-        dispatch_count_x = (chunk_progress.info.chunk_cells + (THREAD_GROUP_X - 1)) / THREAD_GROUP_X;
-        dispatch_count_y = (chunk_progress.info.chunk_cells + (THREAD_GROUP_Y - 1)) / THREAD_GROUP_Y;
-
-        vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, pipelines[2]);
+        vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, pipelines[(u32)PlanetPipelineID::Pass3]);
         vkCmdPushConstants(command_buffer, pipeline_layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(PlanetCreationInfo), &chunk_progress.info);
         vkCmdDispatch(command_buffer, 1, 1, 1);
 
@@ -891,86 +813,33 @@ void Planet::RecordStageOne(PlanetChunkProgress& chunk_progress) {
 
         // ===== Submit ===== //
 
-        VkSemaphoreSubmitInfo wait_semaphore_info{};
-        wait_semaphore_info.sType     = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
-        wait_semaphore_info.pNext     = nullptr;
-        wait_semaphore_info.semaphore = chunk_progress.semaphore;
-        wait_semaphore_info.value     = (u64)PlanetGenerationState::ProcessingStageOne;
-        wait_semaphore_info.stageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
+        VkSemaphore semaphore = chunk_progress.semaphore;
 
         VkSemaphoreSubmitInfo signal_semaphore_info{};
         signal_semaphore_info.sType     = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
-        signal_semaphore_info.pNext     = nullptr;
-        signal_semaphore_info.semaphore = chunk_progress.semaphore;
-        signal_semaphore_info.value     = (u64)PlanetGenerationState::ProcessingStageTwo;
+        signal_semaphore_info.semaphore = semaphore;
+        signal_semaphore_info.value     = (u64)PlanetProcessingStages::AllocateBuffers;
         signal_semaphore_info.stageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
 
         VkCommandBufferSubmitInfo command_buffer_submit_info{};
         command_buffer_submit_info.sType         = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO;
-        command_buffer_submit_info.pNext         = nullptr;
         command_buffer_submit_info.commandBuffer = command_buffer;
 
         VkSubmitInfo2 submit_info{};
         submit_info.sType                    = VK_STRUCTURE_TYPE_SUBMIT_INFO_2;
-        submit_info.pNext                    = nullptr;
-        submit_info.waitSemaphoreInfoCount   = 1;
-        submit_info.pWaitSemaphoreInfos      = &wait_semaphore_info;
         submit_info.signalSemaphoreInfoCount = 1;
         submit_info.pSignalSemaphoreInfos    = &signal_semaphore_info;
         submit_info.commandBufferInfoCount   = 1;
         submit_info.pCommandBufferInfos      = &command_buffer_submit_info;
 
-        VkResult submit_res = vkQueueSubmit2(game_context->compute_queue, 1, &submit_info, VK_NULL_HANDLE);
-        if (submit_res != VK_SUCCESS) {
-                std::println("Failed: {}", (int)submit_res);
+        res = vkQueueSubmit2(game_context->compute_queue, 1, &submit_info, VK_NULL_HANDLE);
+        if (res != VK_SUCCESS) {
+                std::println("Failed Submit: {}", (int)res);
+                exit(1);
         }
 }
 
-// CPU Sum
-// NOTE: Have chunk generation have its own thread, then in update we can just loop all
-// and call this function but with early exit if semaphore not at expected.
-void Planet::StartStageTwo(PlanetChunkProgress& chunk_progress) {
-        // // ===== Start Calc ===== //
-
-        // EdgeSumInfo* mapped_data = (EdgeSumInfo*)chunk_progress.cell_sums_buffer.allocation_info.pMappedData;
-
-        // // Add all y edges
-        // u32 edge_count = chunk_progress.info.chunk_cells;
-
-        // for (u32 z = 0; z < edge_count; z++) {
-        //         for (u32 y = 1; y < edge_count; y++) {
-        //                 u32 index      = (z * edge_count) + y;
-        //                 u32 prev_index = index - 1;
-
-        //                 mapped_data[index].vertex_offset += mapped_data[prev_index].vertex_offset;
-        //                 mapped_data[index].triangle_offset += mapped_data[prev_index].triangle_offset;
-        //         }
-        // }
-
-        // u32 last_index = (edge_count * edge_count) - 1;
-        // // std::println("FDFD: {}", mapped_data[last_index].triangle_count);
-        // // exit(10);
-
-        // // Add last z edge
-        // for (u32 z = 1; z < edge_count; z++) {
-        //         u32 index      = (z * edge_count) + (edge_count - 1);
-        //         u32 prev_index = index - edge_count;
-
-        //         mapped_data[index].vertex_offset += mapped_data[prev_index].vertex_offset;
-        //         mapped_data[index].triangle_offset += mapped_data[prev_index].triangle_offset;
-        // }
-
-        // // u32 last_index = (edge_count * edge_count) - 1;
-
-        // u32 index_count  = mapped_data[last_index].triangle_offset + mapped_data[last_index].triangle_count;
-        // u32 vertex_count = mapped_data[last_index].vertex_offset + mapped_data[last_index].vertex_count;
-
-
-        // =============== //
-        // ===== NEW ===== //
-        // =============== //
-
-
+void Planet::AllocateBuffers(PlanetChunkProgress& chunk_progress) {
         // ===== Get Counts ===== //
 
         EdgeSumInfo* mapped_data = (EdgeSumInfo*)chunk_progress.cell_sums_buffer.allocation_info.pMappedData;
@@ -979,36 +848,40 @@ void Planet::StartStageTwo(PlanetChunkProgress& chunk_progress) {
 
         u32 last_index = (cell_count * cell_count) - 1;
 
-        u32 vertex_count = mapped_data[last_index].vertex_offset;
-        u32 index_count  = mapped_data[last_index].triangle_offset;
+        u32 index_count = mapped_data[last_index].triangle_offset;
+
+        // ===== If no triangles we can finish early ===== //
 
         if (index_count == 0) {
-                chunks[chunk_progress.chunk_index].state = PlanetGenerationState::Empty;
+                // ===== Signal Semaphore as Finished ===== //
+
+                VkSemaphore semaphore = chunk_progress.semaphore;
+
+                VkSemaphoreSignalInfo signal_info{};
+                signal_info.sType     = VK_STRUCTURE_TYPE_SEMAPHORE_SIGNAL_INFO;
+                signal_info.semaphore = semaphore;
+                signal_info.value     = (u64)PlanetProcessingStages::Finished;
+
+                vkSignalSemaphore(game_context->vulkan_device, &signal_info);
+
                 return;
         }
 
-        u64 vertex_buffer_size = sizeof(Vertex) * vertex_count;
-
-        chunks[chunk_progress.chunk_index].state = PlanetGenerationState::AllocateBuffers;
-        chunks[chunk_progress.chunk_index].model.meshes.emplace_back(GPUBuffer{}, vertex_buffer_size, index_count);
-        chunks[chunk_progress.chunk_index].model.material_id = MaterialID::Planet;
-
-
-        u64 index_buffer_size = sizeof(u32) * index_count;
-        u64 buffer_size       = vertex_buffer_size + index_buffer_size;
-
-        // std::println("Buffer Size: {}, v: {}, i: {}", buffer_size, vertex_count, index_count);
-}
-
-void Planet::AllocateBuffers(PlanetChunkProgress& chunk_progress) {
-        // return;
-
         // ===== Allocate Buffers ===== //
 
-        VmaAllocationCreateFlags allocation_flags = VMA_ALLOCATION_CREATE_MAPPED_BIT | VMA_ALLOCATION_CREATE_HOST_ACCESS_RANDOM_BIT;
+        VmaAllocationCreateFlags allocation_flags = 0;
 
-        u64 vertex_buffer_size = chunks[chunk_progress.chunk_index].model.meshes[0].vertices_size;
-        u64 index_buffer_size  = sizeof(u32) * chunks[chunk_progress.chunk_index].model.meshes[0].index_count;
+        u32 vertex_count = mapped_data[last_index].vertex_offset;
+
+        static u32 max_vert = 0;
+
+        if (vertex_count > max_vert) {
+                max_vert = vertex_count;
+                std::println("Vertex Count: {}", max_vert);
+        }
+
+        u64 vertex_buffer_size = sizeof(VertexDrawData) * vertex_count;
+        u64 index_buffer_size  = sizeof(u32) * index_count;
 
         u64 buffer_size = vertex_buffer_size + index_buffer_size;
 
@@ -1016,37 +889,61 @@ void Planet::AllocateBuffers(PlanetChunkProgress& chunk_progress) {
                                            VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
                                            allocation_flags);
 
-        if (!buffer.IsValid()) return;
+        if (!buffer.IsValid()) {
+                std::println("Failed creating buffer");
+                exit(1);
+        }
 
-        // chunks[chunk_progress.chunk_index].model.meshes.emplace_back(buffer, vertex_buffer_size, index_count);
-        chunks[chunk_progress.chunk_index].model.meshes[0].buffer = buffer;
+        chunks[chunk_progress.chunk_index].model.meshes.emplace_back(buffer, vertex_buffer_size, index_count);
+
+        chunks[chunk_progress.chunk_index].model.material.type = MaterialID::Planet;
+
+
+        VmaAllocationCreateFlags instance_allocation_flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT;
+
+        u64 instance_buffer_size = sizeof(InstanceDrawData) * max_frames_in_flight;
+        chunks[chunk_progress.chunk_index].model.instance_buffer =
+                CreateGPUBuffer(game_context->vulkan_device, game_context->vulkan_allocator, instance_buffer_size, game_context->compute_queue_family,
+                                VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, instance_allocation_flags);
+
+        chunks[chunk_progress.chunk_index].model.instances.emplace_back(Transform{Vec3{ 0.0f, 0.0f, 0.0f }, Quat{}, Vec3{ 1.0f, 1.0f, 1.0f }}, 0);
+
+        // == Temp Normals Buffer == //
+
+        u64 normal_buffer_size = sizeof(Vec3) * 4 * vertex_count;
+
+        GPUBuffer normal_buffer = CreateGPUBuffer(game_context->vulkan_device, game_context->vulkan_allocator, normal_buffer_size,
+                                                  game_context->compute_queue_family, VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT, allocation_flags);
 
         // == Set Info Addresses == //
 
         chunk_progress.info.vertices = buffer.device_address;
         chunk_progress.info.indices  = buffer.device_address + vertex_buffer_size;
+        chunk_progress.info.normals  = normal_buffer.device_address;
+
+        chunk_progress.normal_buffer = normal_buffer;
 
         // ===== Signal Semaphore ===== //
 
-        VkSemaphoreSignalInfo signal_info;
+        VkSemaphore semaphore = chunk_progress.semaphore;
+
+        VkSemaphoreSignalInfo signal_info{};
         signal_info.sType     = VK_STRUCTURE_TYPE_SEMAPHORE_SIGNAL_INFO;
-        signal_info.pNext     = NULL;
-        signal_info.semaphore = chunk_progress.semaphore;
-        signal_info.value     = (u64)PlanetGenerationState::ProcessingStageThree;
+        signal_info.semaphore = semaphore;
+        signal_info.value     = (u64)PlanetProcessingStages::StageTwo;
 
         vkSignalSemaphore(game_context->vulkan_device, &signal_info);
-        chunks[chunk_progress.chunk_index].state = PlanetGenerationState::ProcessingStageThree;
 
         // ===== Start Next Stage ===== //
-        RecordStageThree(chunk_progress);
+        RecordStageTwo(chunk_progress);
 }
 
-void Planet::RecordStageThree(PlanetChunkProgress& chunk_progress) {
+void Planet::RecordStageTwo(PlanetChunkProgress& chunk_progress) {
         VkResult res{};
 
         // ===== Get and Begin Command Buffer ===== //
 
-        VkCommandBuffer command_buffer = command_buffers[chunk_progress.command_buffer_index];
+        VkCommandBuffer command_buffer = command_buffers[chunk_progress.resource_index];
 
         // == Reset == //
 
@@ -1066,81 +963,95 @@ void Planet::RecordStageThree(PlanetChunkProgress& chunk_progress) {
 
         // ===== Record Commands ===== //
 
-        u32 dispatch_count_x = (chunk_progress.info.chunk_cells + (THREAD_GROUP_X - 1)) / THREAD_GROUP_X;
-        u32 dispatch_count_y = (chunk_progress.info.chunk_cells + (THREAD_GROUP_Y - 1)) / THREAD_GROUP_Y;
-
         // == Pass Four == //
 
-        vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, pipelines[3]);
+        constexpr u32 PASS_4_X_DISPATCH_COUNT = (CHUNK_CELLS + (THREAD_GROUP_X - 1)) / THREAD_GROUP_X;
+        constexpr u32 PASS_4_Y_DISPATCH_COUNT = (CHUNK_CELLS + (THREAD_GROUP_Y - 1)) / THREAD_GROUP_Y;
+
+        vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, pipelines[(u32)PlanetPipelineID::Pass4]);
         vkCmdPushConstants(command_buffer, pipeline_layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(PlanetCreationInfo), &chunk_progress.info);
-        vkCmdDispatch(command_buffer, dispatch_count_x, dispatch_count_y, THREAD_GROUP_Z);
+        vkCmdDispatch(command_buffer, PASS_4_X_DISPATCH_COUNT, PASS_4_Y_DISPATCH_COUNT, THREAD_GROUP_Z);
 
-        // == TODO: Normals == //
+        // ===== Normals ===== //
 
-        // VkBufferMemoryBarrier2 buffer_barrier{
-        //         .sType               = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
-        //         .pNext               = nullptr,
-        //         .srcStageMask        = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
-        //         .srcAccessMask       = VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT,
-        //         .dstStageMask        = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
-        //         .dstAccessMask       = VK_ACCESS_2_SHADER_READ_BIT,
-        //         .srcQueueFamilyIndex = game_context->compute_queue_family,
-        //         .dstQueueFamilyIndex = game_context->compute_queue_family,
-        //         .buffer              = chunk_progress.edge_buffer.buffer,
-        //         .offset              = 0,
-        //         .size                = VK_WHOLE_SIZE,
-        // };
+        VkBufferMemoryBarrier2 buffer_barrier{
+                .sType         = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2,
+                .srcStageMask  = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
+                .srcAccessMask = VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT,
+                .dstStageMask  = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
+                .dstAccessMask = VK_ACCESS_2_SHADER_READ_BIT,
+                .buffer        = chunks[chunk_progress.chunk_index].model.meshes[0].buffer.buffer,
+                .offset        = 0,
+                .size          = VK_WHOLE_SIZE,
+        };
 
-        // VkDependencyInfo dependency_info{
-        //         .sType                    = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
-        //         .pNext                    = nullptr,
-        //         .dependencyFlags          = 0,
-        //         .memoryBarrierCount       = 0,
-        //         .pMemoryBarriers          = nullptr,
-        //         .bufferMemoryBarrierCount = 1,
-        //         .pBufferMemoryBarriers    = &buffer_barrier,
-        //         .imageMemoryBarrierCount  = 0,
-        //         .pImageMemoryBarriers     = nullptr,
-        // };
+        VkDependencyInfo dependency_info{
+                .sType                    = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
+                .bufferMemoryBarrierCount = 1,
+                .pBufferMemoryBarriers    = &buffer_barrier,
+        };
 
-        // vkCmdPipelineBarrier2KHR(command_buffer, &dependency_info);
+        vkCmdPipelineBarrier2(command_buffer, &dependency_info);
 
-        // // == Pass Five == //
+        // == Pass Five == //
 
-        // vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, pipelines[4]);
-        // vkCmdPushConstants(command_buffer, pipeline_layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(PlanetCreationInfo), &chunk_progress.info);
-        // vkCmdDispatch(command_buffer, dispatch_count_x, dispatch_count_y, THREAD_GROUP_Z);
+        constexpr u32 PASS_5_X_DISPATCH_COUNT = (CHUNK_CELLS + (THREAD_GROUP_X - 1)) / THREAD_GROUP_X;
+        constexpr u32 PASS_5_Y_DISPATCH_COUNT = (CHUNK_CELLS + (THREAD_GROUP_Y - 1)) / THREAD_GROUP_Y;
+
+        vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, pipelines[(u32)PlanetPipelineID::Pass5]);
+        vkCmdPushConstants(command_buffer, pipeline_layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(PlanetCreationInfo), &chunk_progress.info);
+        vkCmdDispatch(command_buffer, PASS_5_X_DISPATCH_COUNT, PASS_5_Y_DISPATCH_COUNT, THREAD_GROUP_Z);
+
+        // ===== Normals Sum ===== //
+
+        VkBufferMemoryBarrier2 buffer_barrier2{
+                .sType         = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2,
+                .srcStageMask  = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
+                .srcAccessMask = VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT,
+                .dstStageMask  = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
+                .dstAccessMask = VK_ACCESS_2_SHADER_READ_BIT,
+                .buffer        = chunk_progress.normal_buffer.buffer,
+                .offset        = 0,
+                .size          = VK_WHOLE_SIZE,
+        };
+
+        VkDependencyInfo dependency_info2{
+                .sType                    = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
+                .bufferMemoryBarrierCount = 1,
+                .pBufferMemoryBarriers    = &buffer_barrier2,
+        };
+
+        vkCmdPipelineBarrier2(command_buffer, &dependency_info2);
+
+        // == Pass Five == //
+
+        constexpr u32 PASS_6_X_DISPATCH_COUNT = (CHUNK_CELLS + (THREAD_GROUP_X - 1)) / THREAD_GROUP_X;
+        constexpr u32 PASS_6_Y_DISPATCH_COUNT = ((CHUNK_CELLS / 4) + (THREAD_GROUP_Y - 1)) / THREAD_GROUP_Y;
+
+        vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, pipelines[(u32)PlanetPipelineID::Pass6]);
+        vkCmdPushConstants(command_buffer, pipeline_layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(PlanetCreationInfo), &chunk_progress.info);
+        vkCmdDispatch(command_buffer, PASS_6_X_DISPATCH_COUNT, PASS_6_Y_DISPATCH_COUNT, THREAD_GROUP_Z);
 
         // ===== End Command Buffer ===== //
 
         res = vkEndCommandBuffer(command_buffer);
 
         // ===== Submit ===== //
-
-        VkSemaphoreSubmitInfo wait_semaphore_info{};
-        wait_semaphore_info.sType     = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
-        wait_semaphore_info.pNext     = nullptr;
-        wait_semaphore_info.semaphore = chunk_progress.semaphore;
-        wait_semaphore_info.value     = (u64)PlanetGenerationState::ProcessingStageThree;
-        wait_semaphore_info.stageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
+        VkSemaphore semaphore = chunk_progress.semaphore;
 
         VkSemaphoreSubmitInfo signal_semaphore_info{};
         signal_semaphore_info.sType     = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
         signal_semaphore_info.pNext     = nullptr;
-        signal_semaphore_info.semaphore = chunk_progress.semaphore;
-        signal_semaphore_info.value     = (u64)PlanetGenerationState::FinishingProcessing;
+        signal_semaphore_info.semaphore = semaphore;
+        signal_semaphore_info.value     = (u64)PlanetProcessingStages::Finished;
         signal_semaphore_info.stageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
 
         VkCommandBufferSubmitInfo command_buffer_submit_info{};
         command_buffer_submit_info.sType         = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO;
-        command_buffer_submit_info.pNext         = nullptr;
         command_buffer_submit_info.commandBuffer = command_buffer;
 
         VkSubmitInfo2 submit_info{};
         submit_info.sType                    = VK_STRUCTURE_TYPE_SUBMIT_INFO_2;
-        submit_info.pNext                    = nullptr;
-        submit_info.waitSemaphoreInfoCount   = 1;
-        submit_info.pWaitSemaphoreInfos      = &wait_semaphore_info;
         submit_info.signalSemaphoreInfoCount = 1;
         submit_info.pSignalSemaphoreInfos    = &signal_semaphore_info;
         submit_info.commandBufferInfoCount   = 1;

@@ -3,6 +3,7 @@ Marching cubes using modified version of Flying Edges
 */
 
 import Base;
+import Noise;
 
 // ===== Input Structs ===== //
 
@@ -47,7 +48,12 @@ struct Vertex {
         }
 };
 
+struct Normals {
+        float3[4] normals;
+}
+
 struct PlanetInfo {
+
         // Input Arrays - For MC
         uint*           edge_case_lookup;
         TriangleLookup* triangle_lookup;
@@ -55,7 +61,7 @@ struct PlanetInfo {
         // Intermediate Arrays
         uint*        edges;
         EdgeSumInfo* cell_sums;
-        float*       triangle_normals;
+        Normals*     normals;
 
         // Outputs
         uint*   indices;
@@ -74,7 +80,7 @@ struct PlanetInfo {
                 printf("    Triangle Lookup:    %p\n", triangle_lookup);
                 printf("    Edges:              %p\n", edges);
                 printf("    Edge Sums:          %p\n", cell_sums);
-                printf("    Triangle Normals:   %p\n", triangle_normals);
+                printf("    Triangle Normals:   %p\n", normals);
                 printf("    Indices:            %p\n", indices);
                 printf("    Vertices:           %p\n", vertices);
                 printf("    Chunk Cells:        %u\n", chunk_cells);
@@ -131,7 +137,28 @@ uint CopyBit(uint v, int from, int to) {
 
 // TODO: Implement
 float GetDensity(float3 position) {
-        return length(position) - 10000;
+        float val = length(position) - 10000.0;
+
+        float offset = 0;
+
+        float mult = Perlin(position / 2000.0);
+
+        offset += Perlin(position / 500.0) * 180.6 * mult;
+        offset += Perlin(position.yxz / 350.0) * 112.3 * mult;
+        offset += Perlin(position / 200.0) * 100.5 * mult;
+        offset += Perlin(position.zxy / 300.0) * 78.4;
+        offset += Perlin(position / 100.0) * 20.3;
+        offset += Perlin(position.xzy / 40.0) * 5.8;
+        offset += Perlin(position / 10.0) * 1.1;
+        offset += Perlin(position.yxz * 2.0) * 0.08;
+        offset += Perlin(position * 10.0) * 0.05;
+        offset += Perlin(position.zyx * 100.0) * 0.01;
+
+        // printf("Offset: %f\n", offset);
+
+        offset = max(100, offset);
+
+        return val - offset;
 }
 
 // ================== //
@@ -193,8 +220,6 @@ void Pass1(uint3 dispatch_id : SV_DispatchThreadID) {
 
         // ===== Loop All X Edges ===== //
 
-        float last_density = density;
-
         for (uint x = 1; x < edge_x_count; x++) {
                 world_position.x += scale;
                 density   = GetDensity(world_position);
@@ -202,18 +227,6 @@ void Pass1(uint3 dispatch_id : SV_DispatchThreadID) {
 
                 info.edges[first_edge_index + x] = is_inside << 1;
                 info.edges[first_edge_index + (x - 1)] |= is_inside << 0;
-
-                // ===== Write Lerp Alpha straight away ===== //
-
-                u32 alpha_bits = 0;
-                if (abs(density) + abs(last_density) != 0) {
-                        float alpha = abs(last_density) / (abs(density) + abs(last_density));
-                        alpha_bits  = u32(1023 * alpha);
-                }
-
-                info.edges[first_edge_index + (x - 1)] |= (alpha_bits << 22);
-
-                last_density = density;
         }
 
         // ===== Do Last Check Out of Loop ===== //
@@ -224,16 +237,6 @@ void Pass1(uint3 dispatch_id : SV_DispatchThreadID) {
 
         u32 last_edge_index = first_edge_index + (edge_x_count - 1);
         info.edges[last_edge_index] |= is_inside << 0;
-
-        // ===== Write Lerp Alpha straight away ===== //
-
-        u32 alpha_bits = 0;
-        if ((abs(density) + abs(last_density)) != 0) {
-                float alpha = abs(last_density) / (abs(density) + abs(last_density));
-                alpha_bits  = u32(1023 * alpha);
-        }
-
-        info.edges[last_edge_index] |= (alpha_bits << 22);
 }
 
 /*
@@ -551,7 +554,7 @@ u32 Bit(u32 b) {
 
 // Write Indices and Vertices
 [[shader("compute")]] [[require(spirv, SPV_KHR_non_semantic_info, spvGroupNonUniformBallot)]] [[numthreads(64, 1, 1)]]
-void Pass4(uint3 dispatch_id : SV_DispatchThreadID, int3 group_thread_coord : SV_GroupThreadID, uint3 group_coord : SV_GroupID) {
+void Pass4(uint3 dispatch_id : SV_DispatchThreadID) {
         if (dispatch_id.x >= info.chunk_cells) return;
 
         // ============================== //
@@ -590,16 +593,6 @@ void Pass4(uint3 dispatch_id : SV_DispatchThreadID, int3 group_thread_coord : SV
         // ====================== //
         // ===== Start Pass ===== //
         // ====================== //
-
-        // == Get Wave Values == //
-
-        u32 wave_count = WaveGetNumWaves();
-
-        u32 lane_index = WaveGetLaneIndex();
-        u32 lane_count = WaveGetLaneCount();
-        u32 wave_index = group_thread_coord.x / lane_count;
-
-        // printf("Groups: %u, Waves: %u, Lanes : %u, GroupID: %u, WaveID: %u\n", group_count, wave_count, lane_count, group_index, wave_index);
 
         // ===== Get Previous Rows Counts as Offsets ===== //
 
@@ -810,7 +803,7 @@ void Pass4(uint3 dispatch_id : SV_DispatchThreadID, int3 group_thread_coord : SV
 
                         // == Default to -1 == //
 
-                        edge_vertex_index[edge_id] = -2;
+                        edge_vertex_index[edge_id] = -1;
 
                         // == Check if Edge is in triangle == //
 
@@ -825,16 +818,27 @@ void Pass4(uint3 dispatch_id : SV_DispatchThreadID, int3 group_thread_coord : SV
                                 float3 first_vertex  = world_position + (vertex_relative_offset[first_edge_vertex]);
                                 float3 second_vertex = world_position + (vertex_relative_offset[second_edge_vertex]);
 
-                                float alpha = float(edge_value >> 22) / 1023.0f; // TODO
+                                float a_den = GetDensity(first_vertex);
+                                float b_den = GetDensity(second_vertex);
 
+                                float  alpha           = (-a_den) / (b_den - a_den);
                                 float3 vertex_position = lerp(first_vertex, second_vertex, alpha);
 
                                 u32 vertex_ind = first_vertex_ind + countbits((owned_vertex_bits & (edge_bit - 1)));
 
                                 info.vertices[vertex_ind].position = vertex_position;
+                                info.vertices[vertex_ind].normal   = normalize(vertex_position);
+                                info.vertices[vertex_ind].uv       = {
+                                        (atan2(vertex_position.x, vertex_position.z) / (2 * float.getPi())) + 0.5,
+                                        (asin(vertex_position.y) / float.getPi()) + 0.5,
+                                };
                                 // info.vertices[current_vertex_offset].position = float3(1);
 
                                 // Store
+                                info.normals[vertex_ind].normals[0] = {};
+                                info.normals[vertex_ind].normals[1] = {};
+                                info.normals[vertex_ind].normals[2] = {};
+                                info.normals[vertex_ind].normals[3] = {};
 
                                 // edge_vertex_index[edge_id] = 0;
                                 edge_vertex_index[edge_id] = (i32)vertex_ind;
@@ -908,17 +912,20 @@ void Pass4(uint3 dispatch_id : SV_DispatchThreadID, int3 group_thread_coord : SV
                 u32 actual_index_count   = 0;
                 // == //
 
-                for (u32 i = 0; i < 15; i++) {
-                        i32 edge_id = info.triangle_lookup[lookup_index].triangle_index[i];
-                        if (edge_id == -1) break;
+                for (u32 i = 0; i < 15; i += 3) {
+                        i32 edge_id0 = info.triangle_lookup[lookup_index].triangle_index[i + 0];
+                        i32 edge_id1 = info.triangle_lookup[lookup_index].triangle_index[i + 1];
+                        i32 edge_id2 = info.triangle_lookup[lookup_index].triangle_index[i + 2];
 
-                        info.indices[current_index_offset] = edge_vertex_index[edge_id];
-                        current_index_offset++;
+                        if (edge_id0 == -1) break;
 
-                        // ===== DEBUG ===== //
-                        if (edge_vertex_index[edge_id] == -1) printf("[SHADER] Got invalid vertex index: %u\n", edge_vertex_index[edge_id]);
-                        actual_index_count++;
-                        // == //
+                        info.indices[current_index_offset + 0] = edge_vertex_index[edge_id0];
+                        info.indices[current_index_offset + 1] = edge_vertex_index[edge_id2]; // Flip
+                        info.indices[current_index_offset + 2] = edge_vertex_index[edge_id1];
+
+                        current_index_offset += 3;
+
+                        actual_index_count += 3;
                 }
 
 
@@ -960,6 +967,229 @@ void Pass4(uint3 dispatch_id : SV_DispatchThreadID, int3 group_thread_coord : SV
 }
 
 // Calculate Normals
-[shader("compute")][numthreads(64, 1, 1)] void Pass5(uint3 dispatch_id : SV_DispatchThreadID) {
-        // ...
+[[shader("compute")]] [[require(spvGroupNonUniformBallot, SPV_KHR_non_semantic_info)]] [[numthreads(64, 1, 1)]] void
+Pass5(uint3 dispatch_id : SV_DispatchThreadID, uint group_index : SV_GroupIndex) {
+        if (dispatch_id.x >= info.chunk_cells) return;
+
+        // ============================== //
+        // ===== Calc Common Values ===== //
+        // ============================== //
+
+        const float scale = GetScale();
+
+        const int cell_count = info.chunk_cells;
+        const int edge_count = cell_count + 1;
+
+        const u32 edge_x_count = cell_count;
+        const u32 edge_y_count = edge_count;
+        const u32 edge_z_count = edge_count;
+
+        const u32 edge_x_step = 1;
+        const u32 edge_y_step = edge_x_count;
+        const u32 edge_z_step = edge_x_count * edge_y_count;
+
+        const u32 sum_x_count = 1;
+        const u32 sum_y_count = cell_count;
+        const u32 sum_z_count = cell_count;
+
+        const u32 sum_x_step = 0;
+        const u32 sum_y_step = sum_x_count;
+        const u32 sum_z_step = sum_x_count * sum_y_count;
+
+        uint3  coords         = uint3(0, dispatch_id.x, dispatch_id.y);
+        float3 world_position = GetWorldPosition(float3(coords), scale);
+
+        // ===== Calc Input Index ===== //
+
+        const u32 first_edge_index = (coords.z * edge_z_step) + (coords.y * edge_y_step);
+        const u32 first_sum_index  = (coords.z * sum_z_step) + (coords.y * sum_y_step);
+
+        // ====================== //
+        // ===== Start Pass ===== //
+        // ====================== //
+
+        u32 start_offset = 0;
+        u32 end_offset   = info.cell_sums[first_sum_index].index_offset;
+
+        if (first_sum_index != 0) {
+                start_offset = info.cell_sums[first_sum_index - 1].index_offset;
+        }
+
+        for (u32 x = 0; x < cell_count; x++) {
+                u32 edge_index = first_edge_index + x;
+
+                u32 edge_value   = info.edges[edge_index];
+                u32 lookup_index = (edge_value >> 2) & 255;
+
+                for (u32 i = 0; i < 15; i += 3) {
+                        i32 edge_id0 = info.triangle_lookup[lookup_index].triangle_index[i + 0];
+                        if (edge_id0 == -1) break;
+                        i32 edge_id1 = info.triangle_lookup[lookup_index].triangle_index[i + 2]; // Flipped for winding order
+                        i32 edge_id2 = info.triangle_lookup[lookup_index].triangle_index[i + 1];
+
+                        u32 i0 = info.indices[start_offset + 0];
+                        u32 i1 = info.indices[start_offset + 1];
+                        u32 i2 = info.indices[start_offset + 2];
+
+                        float3 v0 = info.vertices[i0].position;
+                        float3 v1 = info.vertices[i1].position;
+                        float3 v2 = info.vertices[i2].position;
+
+                        float3 e0 = normalize(v2 - v0);
+                        float3 e1 = normalize(v1 - v0);
+
+                        if (abs(dot(e0, e1)) >= 0.9999f) continue;
+                        float3 normal = cross(e0, e1);
+
+                        u32 normal_index0 = edge_id0 >> 1;
+                        if (normal_index0 > 3) normal_index0 = edge_id0 - 8;
+                        info.normals[i0].normals[normal_index0] = normal;
+
+                        u32 normal_index1 = edge_id1 >> 1;
+                        if (normal_index1 > 3) normal_index1 = edge_id1 - 8;
+                        info.normals[i1].normals[normal_index1] = normal;
+
+                        u32 normal_index2 = edge_id2 >> 1;
+                        if (normal_index2 > 3) normal_index2 = edge_id2 - 8;
+                        info.normals[i2].normals[normal_index2] = normal;
+
+                        start_offset += 3;
+
+                        if (normal_index0 > 3 || normal_index1 > 3 || normal_index2 > 3) printf("[SHADER] ERROR");
+                }
+        }
+}
+
+[[shader("compute")]] [[require(spvGroupNonUniformBallot, SPV_KHR_non_semantic_info)]] [[numthreads(64, 1, 1)]] void
+Pass6(uint3 dispatch_id : SV_DispatchThreadID, uint group_index : SV_GroupIndex) {
+        if (dispatch_id.x >= info.chunk_cells) return;
+
+        // ============================== //
+        // ===== Calc Common Values ===== //
+        // ============================== //
+
+        const float scale = GetScale();
+
+        const int cell_count = info.chunk_cells;
+        const int edge_count = cell_count + 1;
+
+        const u32 edge_x_count = cell_count;
+        const u32 edge_y_count = edge_count;
+        const u32 edge_z_count = edge_count;
+
+        const u32 edge_x_step = 1;
+        const u32 edge_y_step = edge_x_count;
+        const u32 edge_z_step = edge_x_count * edge_y_count;
+
+        const u32 sum_x_count = 1;
+        const u32 sum_y_count = cell_count;
+        const u32 sum_z_count = cell_count;
+
+        const u32 sum_x_step = 0;
+        const u32 sum_y_step = sum_x_count;
+        const u32 sum_z_step = sum_x_count * sum_y_count;
+
+        uint3  coords         = uint3(0, dispatch_id.x, dispatch_id.y);
+        float3 world_position = GetWorldPosition(float3(coords), scale);
+
+        // ===== Calc Input Index ===== //
+
+        const u32 first_edge_index = (coords.z * edge_z_step) + (coords.y * edge_y_step);
+        const u32 first_sum_index  = (coords.z * sum_z_step) + (coords.y * sum_y_step);
+
+        // ====================== //
+        // ===== Start Pass ===== //
+        // ====================== //
+
+        // NOTE: Not actual waves and lanes, just combining all for a chunk
+
+        u32 dispatch_count  = cell_count * (cell_count / 4);
+        u32 vertex_count    = info.cell_sums[(cell_count * cell_count) - 1].vertex_offset;
+        u32 lane_work_count = (vertex_count + (dispatch_count - 1)) / dispatch_count;
+
+        u32 lane_index = coords.y + coords.z * cell_count;
+
+        u32 start_index = lane_work_count * lane_index;
+        // printf("Vertex: %u\n", vertex_count);
+
+        for (u32 i = 0; i < lane_work_count; i++) {
+                u32 index = start_index + i;
+                if (index > vertex_count - 1) return;
+
+                float3 normal = {};
+
+                for (u32 n = 0; n < 4; n++) {
+                        normal += info.normals[index].normals[n];
+                }
+
+                if (dot(normal, normal) < 0.00001f) continue;
+                info.vertices[index].normal = normalize(normal);
+        }
+}
+
+struct IndirectData {
+        u32 indexCount;
+        u32 instanceCount;
+        u32 firstIndex;
+        i32 vertexOffset;
+        u32 firstInstance;
+}
+
+struct GrassInputData {
+
+        uint*   indices;
+        Vertex* vertices;
+
+        u32 index_count;
+        u32 vertex_count;
+
+        float3* points;
+        u32*    point_count;
+
+        IndirectData* indirect_draws; // Write grass data here
+};
+
+[vk::push_constant] GrassInputData grass_info;
+
+[[shader("compute")]] [[require(spvGroupNonUniformBallot, SPV_KHR_non_semantic_info)]] [[numthreads(256, 1, 1)]] void
+Grass(uint3 dispatch_id : SV_DispatchThreadID) {
+        u32 thread_count = 256;
+
+        u32 per_thread_work_count = (grass_info.index_count + (thread_count - 1)) / thread_count;
+
+        u32 start_index = dispatch_id.x * per_thread_work_count;
+
+        for (u32 i = 0; i < per_thread_work_count; i += 3) {
+                u32 index = start_index + i;
+                if (index >= grass_info.index_count) return;
+
+                float3 v0 = grass_info.vertices[grass_info.indices[index + 0]].position;
+                float3 v1 = grass_info.vertices[grass_info.indices[index + 1]].position;
+                float3 v2 = grass_info.vertices[grass_info.indices[index + 2]].position;
+
+                float3 e0 = v1 - v0;
+                float3 e1 = v2 - v0;
+
+                float area = length(cross(e0, e1)) / 2.0f;
+
+                printf("Area: %f\n", area);
+
+                u32 points_to_gen = 4;
+                u32 write_index;
+                InterlockedAdd(*grass_info.point_count, points_to_gen, write_index);
+
+                for (u32 n = 0; n < points_to_gen; n++) {
+                        float u = 0.33f * float(n / 2);
+                        float v = 0.33f * float(n % 2);
+
+                        float alpha = 1 - u - v;
+                        float beta  = u;
+                        float gamma = v;
+
+                        float3 pos = v0 * alpha + v1 * beta + v2 * gamma;
+
+                        grass_info.points[write_index] = pos;
+                        write_index++;
+                }
+        }
 }

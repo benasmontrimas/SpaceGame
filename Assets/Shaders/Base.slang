@@ -1,3 +1,5 @@
+#pragma once
+
 typealias u32 = uint;
 typealias i32 = int;
 
@@ -8,23 +10,9 @@ enum LogLevel {
 }
 
 void Log<each T>(NativeString format, const T args) {
-        // printf("[SHADER]");
-
-        NativeString level_string[3] = {
-                "[INFO]",
-                "[WARN]",
-                "[ERRO]",
-        };
-
-        const NativeString prefix = "[SHADER]";
-
-        NativeString f;
-        f = format;
-
         printf(format, args);
-        // printf(format, args);
 }
 
-#define LogInfo(format, ...) Log("[SHADER] [INFO] "format"\n", __VA_ARGS__)
-#define LogWarn(format, ...) Log("[SHADER] [WARN] "format"\n", __VA_ARGS__)
-#define LogError(format, ...) Log("[SHADER] [ERRO] "format"\n", __VA_ARGS__)
+#define LogInfo(format, ...)  Log("[SHADER] [INFO] " format "\n", __VA_ARGS__)
+#define LogWarn(format, ...)  Log("[SHADER] [WARN] " format "\n", __VA_ARGS__)
+#define LogError(format, ...) Log("[SHADER] [ERRO] " format "\n", __VA_ARGS__)
