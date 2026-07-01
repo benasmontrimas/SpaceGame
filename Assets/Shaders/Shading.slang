@@ -2,36 +2,9 @@ import Lights;
 
 import Base;
 
-struct CameraMatrices {
-        float4x4 projection;
-        float4x4 view;
-};
+// ===== STRUCTS ===== //
 
-struct VSInput {
-        float3 position;
-        float3 normal;
-        float2 uv;
-
-        float4x4 model_matrix;
-        u32      letter_index;
-};
-
-struct VSOutput {
-        float4 position : SV_POSITION;
-        float3 normal;
-        float3 tangent;
-        float2 uv;
-        float2 uv1;
-        float2 uv2;
-        float3 weights;
-
-        MaterialData material_data;
-        MaterialID   material_id;
-
-        float3 world_position;
-};
-
-enum MaterialID {
+enum MaterialType {
         None = 0,
 
         SkyMap = 1,
@@ -49,12 +22,44 @@ struct MaterialData {
         u32 texture_id_4;
 };
 
-struct ShaderData {
+struct ModelData {
+        MaterialType material_id;
         MaterialData material_data;
-        MaterialID   material_id;
 };
 
-// ===== Input ===== //
+struct CameraMatrices {
+        float4x4 projection;
+        float4x4 view;
+};
+
+// ===== INPUTS + OUTPUTS ===== //
+
+struct VertexData {
+        [[vk::location(0)]] float3 position;
+        [[vk::location(1)]] float3 normal;
+        [[vk::location(2)]] float2 uv;
+
+        [[vk::location(3)]] float4x4 model_matrix;
+        [[vk::location(7)]] u32      user_value;
+};
+
+// ParameterBlock<VertexData> vertex_data;
+// ParameterBlock<InstanceData> instance_data;
+
+struct VSOutput {
+        float4 position : SV_POSITION;
+        float3 normal;
+        float3 tangent;
+        float2 uv;
+        float2 uv1;
+        float2 uv2;
+        float3 weights;
+
+        MaterialData material_data;
+        MaterialType material_id;
+
+        float3 world_position;
+};
 
 [[vk::binding(0)]]
 ConstantBuffer<CameraMatrices> camera_matrices;
@@ -62,13 +67,15 @@ ConstantBuffer<CameraMatrices> camera_matrices;
 [[vk::binding(1)]]
 Sampler2D textures[];
 
+[[vk::push_constant]]
+ModelData model_data;
+
 // ================== //
 // ===== VERTEX ===== //
 // ================== //
 
 
-[[shader("vertex")]] [[require(SPV_KHR_non_semantic_info)]] VSOutput main(VSInput input, uniform ShaderData* shading_data,
-                                                                          uint instance_index : SV_VulkanInstanceID) {
+[[shader("vertex")]] [[require(SPV_KHR_non_semantic_info)]] VSOutput main(VertexData input, int instance_index : SV_VulkanInstanceID) {
         VSOutput output;
         float4   tangent = { cross(input.normal, { 0.0, 1.0, 0.0 }), 0.0 };
 
@@ -91,8 +98,27 @@ Sampler2D textures[];
         output.position       = mul(camera_matrices.view, output.position);
         output.position       = mul(camera_matrices.projection, output.position);
 
-        output.material_data = shading_data.material_data;
-        output.material_id   = shading_data.material_id;
+        output.material_data = model_data.material_data;
+        output.material_id   = model_data.material_id;
+
+        switch (model_data.material_id) {
+                case MaterialType::Text:
+                        float2 texture_dims   = float2(512, 512);
+                        float2 cell_dimension = float2(102.0, 85.0) / texture_dims;
+                        float  glyph_size     = 86.8125;
+                        float2 cell_origin    = float2(0.0552134629, 0.247660187) / texture_dims;
+                        u32    columns        = 5;
+
+                        u32 col = input.user_value % columns;
+                        u32 row = input.user_value / columns;
+
+                        float2 uv_start = cell_dimension * float2(col, row) + cell_origin + float2(0.003, 0.003);
+                        output.uv       = uv_start + (input.uv * cell_dimension) - float2(0.008, 0.002);
+
+                        output.position                   = mul(input.model_matrix, float4(position, 1.0));
+                        output.material_data.texture_id_1 = model_data.material_data.texture_id_1;
+                        break;
+        }
 
         return output;
 }
@@ -167,56 +193,46 @@ float4 PlanetMaterial(VSOutput input) {
                 { 1, 0.84, 0.66, 1.0 },
         };
 
-
-        if (length(input.world_position) < 10101) {
-                albedo = { 0.0f, 0.0f, 1.0f, 1.0f };
-                normal = normalize(input.world_position);
-        }
-
         return albedo * light.Evaluate(input.world_position, normal);
         // return float4(1.0f, 0.0f, 0.0f, 1.0f);
 }
 
-// For World Space Text - Can replace with a precomputed value otherwise.
-float ScreenPixelRange(VSOutput input) {
-        Sampler2D tex = textures[input.material_data.texture_id_1];
-        float     width, height;
-        tex.GetDimensions(width, height);
-
-        float px_range = 4;
-
-        float2 unit_range      = float2(px_range) / float2(width, height);
-        float2 screen_tex_size = rsqrt(pow(ddx(input.uv), 2) + pow(ddy(input.uv), 2));
-
-        return max(0.5 * dot(unit_range, screen_tex_size), 1.0f);
-}
-
 float4 Text(VSOutput input) {
+        float2 cell_dimension = { 102.0, 85.0 };
+        float  glyph_size     = 86.8125;
+        float2 cell_origin    = { 0.0552134629, 0.247660187 };
+        u32    columns        = 5;
+
         float3 signed_distance_rgb = textures[input.material_data.texture_id_1].Sample(input.uv).rgb;
         float  signed_distance =
                 max(min(signed_distance_rgb.r, signed_distance_rgb.g), min(max(signed_distance_rgb.r, signed_distance_rgb.g), signed_distance_rgb.b));
 
-        float screen_distance = ScreenPixelRange(input) * (signed_distance - 0.5);
+        // float screen_distance = ScreenPixelRange(input) * (signed_distance - 0.5);
+        float pixel_range     = 512.0 / glyph_size * 2;
+        float screen_distance = pixel_range * (signed_distance - 0.5);
 
         float opacity = clamp(screen_distance + 0.5, 0.0, 1.0);
+        if (opacity < 0.1) discard;
 
-        return lerp(float4(0, 0, 0, 1), float4(1, 1, 1, 1), opacity);
+        if (signed_distance < 0.8) return float4(1, 1, 1, 1);
+        return float4(0, 0, 0, 1);
+        // return lerp(float4(0, 0, 0, 1), float4(1, 1, 1, 1), signed_distance);
 }
 
 [[shader("fragment")]] [[require(SPV_KHR_non_semantic_info)]] float4 main(VSOutput input) {
         input.normal = normalize(input.normal);
 
         switch (input.material_id) {
-                case MaterialID::None:
+                case MaterialType::None:
                         return { 1, 0, 1, 1 };
 
-                case MaterialID::SkyMap:
+                case MaterialType::SkyMap:
                         return SkyMapMaterial(input);
-                case MaterialID::Basic:
+                case MaterialType::Basic:
                         return BasicMaterial(input);
-                case MaterialID::Planet:
+                case MaterialType::Planet:
                         return PlanetMaterial(input);
-                case MaterialID::Text:
+                case MaterialType::Text:
                         return Text(input);
 
                 default:

@@ -120,7 +120,7 @@ bool InputSystem::Update() {
 
 
                 if (event.type == SDL_EVENT_WINDOW_RESIZED) {
-                        // game_context.swapchain_needs_resizing = true;
+                        window->is_resized = true;
                 }
         }
 

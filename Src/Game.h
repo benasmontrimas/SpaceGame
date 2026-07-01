@@ -20,6 +20,7 @@ struct Window {
         SDL_Window* window;
         i32         width;
         i32         height;
+        bool is_resized;
 };
 
 // ====== //
@@ -31,11 +32,11 @@ static constexpr u32 max_draw_count{ 10'000 };
 
 struct GameContext {
         void Init();
-        void InitComputePipeline();
 
         void Shutdown();
 
         void Render(const Camera& camera);
+        void Resize();
 
         // ====== //
 
@@ -43,10 +44,11 @@ struct GameContext {
 
         VmaAllocator vulkan_allocator;
 
-        VkInstance     vulkan_instance;
-        VkDevice       vulkan_device;
-        VkSurfaceKHR   vulkan_surface;
-        VkSwapchainKHR vulkan_swapchain;
+        VkInstance       vulkan_instance;
+        VkPhysicalDevice physical_device;
+        VkDevice         vulkan_device;
+        VkSurfaceKHR     vulkan_surface;
+        VkSwapchainKHR   vulkan_swapchain;
 
         u32 graphics_queue_family;
         u32 compute_queue_family;
@@ -87,20 +89,6 @@ struct GameContext {
         Slang::ComPtr<slang::IGlobalSession> slang_global_session;
         Slang::ComPtr<slang::ISession>       slang_session;
 
-        // ===== Compute Pipeline ===== //
-
-        VkPipelineLayout compute_pipeline_layout;
-        VkPipeline       compute_pipeline; // Does this need a layout?
-
-        VkDescriptorSetLayout compute_descriptor_set_layout;
-        VkDescriptorPool      compute_descriptor_pool;
-        VkDescriptorSet       compute_descriptor_set;
-
-        std::vector<VkSemaphore> compute_semaphores;
-        std::vector<VkFence>     compute_fences;
-        VkCommandPool            compute_command_pool;
-        VkCommandBuffer          compute_command_buffer;
-
         // ===== Transfer Pipeline ===== //
 
         TransferEngine transfer_engine;
@@ -110,22 +98,17 @@ struct GameContext {
         u32 frame_index{};
         u32 image_index{};
 
-        u64 frames_submitted{}; // (frames_submitted - max_frames_in_flight) == last know finished frame
+        u64 frames_submitted{ max_frames_in_flight }; // (frames_submitted - max_frames_in_flight) == last know finished frame
 
         bool swapchain_needs_resizing{ false };
 
         GPUBuffer per_frame_draw_buffer;
 
-        // ===== Meshes ===== //
-        std::vector<Model> models;
-
-        // ===== Input ===== //
+        // ===== Systems ===== //
 
         InputSystem input_system;
-
-        // ===== Text ===== //
-
-        TextSystem text_system;
+        TextSystem  text_system;
+        ModelSystem model_system;
 
         // ===== Functions ===== //
 
@@ -144,13 +127,17 @@ struct Game {
 
         GameContext game_context;
 
-        Planet  planet;
-        Texture skymap;
-        Texture ground_texture;
-        Texture ground_normal_texture;
-        Texture ground_disp_texture;
+        Planet planet;
 
-        Texture text[26];
+        ModelID letter_quad_model;
+        ModelID sky_sphere_model;
+        ModelID box_model;
+
+        Texture skymap;
+
+        // Model Instances
+        ModelInstance sky_sphere;
+        ModelInstance test_box;
 
         // Actions
         Action* forward_action;

@@ -9,16 +9,21 @@
 #include <string>
 #include <vector>
 
+#include <ft2build.h>
+
+#include <freetype/freetype.h>
+#include <freetype/ftoutln.h>
+
 struct GameContext;
 
 using TextureID = u32;
-using ModelID = u32;
+using ModelID   = u32;
 
 // ===================== //
 // ===== MATERIALS ===== //
 // ===================== //
 
-enum class MaterialID : u32 {
+enum class MaterialType : u32 {
         None = 0,
 
         SkyMap = 1,
@@ -37,12 +42,23 @@ struct MaterialSkyMap {
         TextureID texture_id;
 };
 
+struct MaterialPlanet {
+        TextureID ground_diffuse_texture_id;
+        TextureID ground_normal_texture_id;
+};
+
+struct MaterialText {
+        TextureID texture_start;
+};
+
 struct Material {
-        MaterialID type;
+        MaterialType type;
 
         union {
                 MaterialBase   base;
                 MaterialSkyMap skymap;
+                MaterialPlanet planet;
+                MaterialText   text;
         };
 
         void* Data() const {
@@ -63,7 +79,7 @@ struct FrameDrawData {
         Mat4 view_matrix;
 };
 
-struct MeshDrawData {
+struct ModelDrawData {
         Material material;
 };
 
@@ -101,11 +117,6 @@ struct Mesh {
         u64       index_count;
 };
 
-struct InstanceData {
-        Transform transform;
-        u32       user_value;
-};
-
 // A single instance of a model.
 struct ModelInstance {
         ModelID model_id;
@@ -118,17 +129,21 @@ struct ModelInstance {
 struct Model {
         // ===== Init/Deinit Functions ===== //
 
-        void Init(GameContext& game_context, VertexDrawData* vertices, u64 vertex_count, u32* indices, u64 index_count, u32 _max_instance_count);
-        void LoadFromOBJ(GameContext& game_context, const std::string& file_name, u32 _max_instance_count);
+        void Init(GameContext* game_context, VertexDrawData* vertices, u64 vertex_count, u32* indices, u64 index_count, u32 _max_instance_count);
+        void Init(GameContext* game_context, u64 vertex_count, u64 index_count, u32 _max_instance_count);
+        void LoadFromOBJ(GameContext* game_context, const std::string& file_name, u32 _max_instance_count);
 
-        void Destroy(GameContext& game_context);
+        void Destroy(GameContext* game_context);
 
         // ===== Members ===== //
 
-        std::vector<Mesh> meshes;
-        std::vector<InstanceData> instances;
+        Mesh* meshes;
+        u32   mesh_count;
 
-        GPUBuffer         instance_buffer;
+        InstanceDrawData* instance_draw_data;
+        u32               instance_count;
+
+        GPUBuffer instance_buffer;
 
         Material material;
 
@@ -136,18 +151,42 @@ struct Model {
 
         u32 max_instance_count;
 
-        void Draw() {
-                // TODO: Draw
+        void Draw(VkCommandBuffer command_buffer, VkPipelineLayout pipeline_layout, u32 frame_index);
+};
 
-                instances.clear();
-        }
+union ModelSlot {
+        Model model;
+        u32   next_free_index;
 };
 
 struct ModelSystem {
-        std::vector<Model> models;
 
-        void Draw(ModelInstance instance) {
-                models[instance.model_id].instances.emplace_back(instance.transform, instance.user_value);
+        std::vector<ModelSlot> models;
+        ModelID                next_free_index;
+
+        GameContext* game_context;
+
+        void Init(GameContext* _game_context);
+
+        ModelID GetNewModelID();
+
+        ModelID LoadModel(const std::string& file_path, u32 max_instance_count);
+        ModelID CreateModel(VertexDrawData* vertices, u64 vertex_count, u32* indices, u64 index_count, u32 _max_instance_count);
+        ModelID CreateModel(u64 vertex_count, u64 index_count, u32 _max_instance_count);
+        ModelID AddModel(const Model& model);
+
+        void          DestroyModel(ModelID id);
+        ModelInstance CreateModelInstance(ModelID id) const;
+
+        void Draw(ModelInstance instance);
+        void Draw(VkCommandBuffer command_buffer, u32 frame_index);
+
+        Model& operator[](ModelID id) {
+                return models[id].model;
+        }
+
+        const Model& operator[](ModelID id) const {
+                return models[id].model;
         }
 };
 
@@ -158,7 +197,7 @@ struct ModelSystem {
 // NOTE: Why does this take a command_pool? make a manager and pass command buffers please
 struct Texture {
         void Load(VkDevice device, VkCommandPool command_pool, VkQueue queue, const std::string& file_name, const VmaAllocator& allocator);
-        void Destroy(GameContext& game_context);
+        void Destroy(GameContext* game_context);
 
         VkImage       image;
         VkImageView   image_view;
@@ -180,17 +219,20 @@ struct TextSystem {
         static constexpr u64 max_letter_count  = 100'000;
         static constexpr u64 frame_buffer_size = max_letter_count * sizeof(InstanceDrawData);
 
-        Model     model;
-        GPUBuffer instance_data;
-        u32       letter_count;
-        u32       frame_index;
+        GameContext* game_context;
+        ModelID      model_id;
 
-        InstanceDrawData* next_frame_draw_data;
+        Texture title_font_atlas;
+        Texture default_font_atlas;
 
+        FT_Library ft_library;
 
-        void Init(GameContext& game_context);
-        void AddText(Transform* text_data, u32 text_letter_count);
-        void Draw(VkCommandBuffer command_buffer);
+        FT_Face title_font;
+        FT_Face default_font;
+
+        void Init(GameContext* _game_context);
+        void Shutdown();
+        void AddText(ModelInstance* model_instance, u32 text_letter_count);
 };
 
 struct RenderedText {
@@ -199,10 +241,10 @@ struct RenderedText {
         std::vector<RenderedLetter> letter_data;
         Vec4                        default_colour{ 1, 1, 1, 1 };
 
-        void SetText(const std::string& new_text);
-        void SetSubText(const std::string& new_sub_text, u32 start);
-        void SetColour(Vec4 colour);
-        void SetColour(u32 letter_index, Vec4 colour); // NOTE: Count letter index from text, as we dont have spaces and new lines.
+        void SetText(TextSystem* text_system, const std::string& new_text);
+        void SetSubText(TextSystem* text_system, const std::string& new_sub_text, u32 start);
+        void SetColour(TextSystem* text_system, Vec4 colour);
+        void SetColour(TextSystem* text_system, u32 letter_index, Vec4 colour); // NOTE: Count letter index from text, as we dont have spaces and new lines.
 
-        void Draw(TextSystem& text_system);
+        void Draw(TextSystem* text_system);
 };

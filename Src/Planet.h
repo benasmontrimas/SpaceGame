@@ -15,7 +15,7 @@
 // ===== Constants ===== //
 // ===================== //
 
-constexpr u32 MINIMUM_CHUNK_DIMS = 64;
+constexpr u32 MINIMUM_CHUNK_DIMS = 8;
 constexpr u32 PLANET_MAX_RADIUS  = 50'000;
 
 
@@ -118,6 +118,8 @@ enum class PlanetProcessingStages : u32 {
         AllocateBuffers,
         StageTwo,
         Finished,
+
+        Count,
 };
 
 // Keeps track of a chunks state.
@@ -150,16 +152,17 @@ struct PlanetChunk {
                 u32 next_free_index;
         };
 
-        Model model;
+        ModelID model_id;
+        bool    is_empty = false;
 
-        bool IsEmpty() const {
-                if (state != PlanetGenerationState::Initialised) return false;
-                return model.meshes.size() == 0 or model.meshes[0].index_count == 0;
-        }
+        // bool IsEmpty() const {
+        //         if (state == PlanetGenerationState::Processing) return false;
+        //         return model_id == u32_max;
+        // }
 
         bool IsRenderReady() const {
-                if (model.meshes.size() == 0) return false;
-                return state == PlanetGenerationState::Initialised and model.meshes[0].index_count > 0;
+                if (model_id == u32_max) return false;
+                return state == PlanetGenerationState::Initialised and !is_empty;
         }
 
         // ===== Experimental ===== //
@@ -259,6 +262,7 @@ struct PlanetChunkProgress {
         u32                chunk_index;
         PlanetCreationInfo info;
 
+        u64         semaphore_start_value;
         VkSemaphore semaphore;
 
         GPUBuffer edge_buffer;
@@ -274,7 +278,7 @@ struct Planet {
         static constexpr u32 THREAD_GROUP_X        = 64;
         static constexpr u32 THREAD_GROUP_Y        = 1;
         static constexpr u32 THREAD_GROUP_Z        = 1;
-        static constexpr u32 COMMAND_BUFFER_COUNT  = 100;
+        static constexpr u32 COMMAND_BUFFER_COUNT  = 20;
         static constexpr u32 GENERATION_PASS_COUNT = 6;
         static constexpr u32 CHUNK_CELLS           = 127;
         static constexpr u32 CHUNK_EDGES           = 128;
@@ -294,6 +298,7 @@ struct Planet {
 
         VkCommandPool   command_pool;
         VkCommandBuffer command_buffers[COMMAND_BUFFER_COUNT];
+        VkSemaphore     semaphores[COMMAND_BUFFER_COUNT];
 
         std::vector<u32> free_command_buffers;
         VkPipelineLayout pipeline_layout;
@@ -313,6 +318,12 @@ struct Planet {
         PlanetChunkTree tree;
 
         GameObject* target;
+
+        Texture ground_texture;
+        Texture ground_normal_texture;
+        Texture ground_disp_texture;
+
+        Material planet_material;
 
         // ===== Functions ===== //
 

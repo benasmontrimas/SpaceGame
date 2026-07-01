@@ -143,20 +143,20 @@ float GetDensity(float3 position) {
 
         float mult = Perlin(position / 2000.0);
 
-        offset += Perlin(position / 500.0) * 180.6 * mult;
-        offset += Perlin(position.yxz / 350.0) * 112.3 * mult;
-        offset += Perlin(position / 200.0) * 100.5 * mult;
-        offset += Perlin(position.zxy / 300.0) * 78.4;
-        offset += Perlin(position / 100.0) * 20.3;
-        offset += Perlin(position.xzy / 40.0) * 5.8;
-        offset += Perlin(position / 10.0) * 1.1;
-        offset += Perlin(position.yxz * 2.0) * 0.08;
-        offset += Perlin(position * 10.0) * 0.05;
-        offset += Perlin(position.zyx * 100.0) * 0.01;
+        offset += Perlin(position / 498.0) * 180.6 * mult;
+        offset += Perlin(position / 326.0) * 112.3 * mult;
+        offset += Perlin(position / 205.0) * 100.5 * mult;
+        offset += Perlin(position / 303.0) * 78.4;
+        offset += Perlin(position / 99.4) * 20.3;
+        offset += Perlin(position / 42.0) * 5.8;
+        offset += Perlin(position / 11.0) * 1.1;
+        offset += Perlin(position * 1.8) * 0.08;
+        offset += Perlin(position * 8.0) * 0.05;
+        offset += Perlin(position * 104.0) * 0.01;
 
-        // printf("Offset: %f\n", offset);
+        float a = smoothstep(0.0, 1.0, (100.0 - offset) / 30.0);
 
-        offset = max(100, offset);
+        offset = offset * (1.0 - a) + a * (70 + VoronoiNoise(position.xz / 50.0) * 4.0);
 
         return val - offset;
 }

@@ -40,7 +40,12 @@ GPUBuffer CreateGPUBuffer(VkDevice vulkan_device, VmaAllocator allocator, u64 si
         VkResult res = vmaCreateBuffer(allocator, &buffer_info, &buffer_allocation_info, &buffer.buffer, &buffer.allocation, &buffer.allocation_info);
 
         if (res != VK_SUCCESS) {
-                std::println("Failed creating buffer: {}", (i32)res);
+                std::println("Failed creating buffer: size {} : {}", size, (i32)res);
+
+                char* string;
+                vmaBuildStatsString(allocator, &string, false);
+                std::println("{}", string);
+
                 exit(res);
         }
 
@@ -70,7 +75,7 @@ GPUBuffer CreateGPUBuffer(VkDevice vulkan_device, VmaAllocator allocator, u64 si
 
         BUFFER_ALLOCATION_MEM += (u64)buffer.allocation_info.size;
         BUFFER_ALLOCATION_COUNT++;
-        // if (BUFFER_ALLOCATION_COUNT % 100 == 0)std::println("Buffer Allocation: {}, Allocations: {}, Frees: {}, Diff: {}", BUFFER_ALLOCATION_MEM,
+        // if (BUFFER_ALLOCATION_COUNT % 100 == 0) std::println("Buffer Allocation: {}, Allocations: {}, Frees: {}, Diff: {}", BUFFER_ALLOCATION_MEM,
         // BUFFER_ALLOCATION_COUNT, BUFFER_FREE_COUNT, BUFFER_ALLOCATION_COUNT - BUFFER_FREE_COUNT);
 
         if (BUFFER_ALLOCATION_MEM > 4'000'000'000) {
@@ -88,8 +93,7 @@ void DestroyGPUBuffer(VkDevice vulkan_device, GPUBuffer& buffer, VmaAllocator vu
 
         BUFFER_ALLOCATION_MEM -= (u64)buffer.allocation_info.size;
         BUFFER_FREE_COUNT++;
-        // std::println("Buffer Allocation: {}, Allocations: {}, Frees: {}, Diff: {}", BUFFER_ALLOCATION_MEM, BUFFER_ALLOCATION_COUNT, BUFFER_FREE_COUNT,
-        // BUFFER_ALLOCATION_COUNT - BUFFER_FREE_COUNT);
+        // if (BUFFER_FREE_wCOUNT - BUFFER_FREE_COUNT);
 
         // Zero out memory so we dont store old refs.
         memset(&buffer, 0, sizeof(GPUBuffer));

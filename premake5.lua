@@ -9,6 +9,7 @@ project "SpaceGame"
         kind "ConsoleApp"
         language "C++"
         cppdialect "C++23"
+        symbols "On"
 
         -- Output Location --
         location "Build/"
@@ -22,6 +23,7 @@ project "SpaceGame"
         externalincludedirs {
                 "External",
                 "External/KTX",
+                "External/FreeType",
                 "$(VULKAN_SDK)/include",
         }
 
@@ -66,7 +68,8 @@ project "SpaceGame"
                         "SDL3",
                         "External/KTX/lib/ktx",
                         "volk",
-                        "External/slang/lib/slang"
+                        "External/slang/lib/slang",
+                        "freetype"
                 }
 
         filter "configurations:Debug"
@@ -80,6 +83,7 @@ project "SpaceGame"
 
         filter "configurations:Release"
               -- kind "WindowedApp"
+                symbols "Off"
                 defines { "RELEASE" }
                 optimize "On"
 

@@ -5,7 +5,7 @@
 #include <vma/vk_mem_alloc.h>
 
 struct GPUBuffer {
-        VkBuffer          buffer;
+        VkBuffer          buffer{ VK_NULL_HANDLE };
         VmaAllocation     allocation;
         VmaAllocationInfo allocation_info;
         VkDeviceAddress   device_address;

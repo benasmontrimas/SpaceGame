@@ -16,122 +16,6 @@
 #include <print>
 #include <vector>
 
-void GameContext::InitComputePipeline() {
-        VkResult res{};
-
-        // ===== Create Compute Pipeline Layout ===== //
-
-        VkPushConstantRange push_constant_range{
-                .stageFlags = VK_SHADER_STAGE_COMPUTE_BIT,
-                .size       = sizeof(PlanetCreationInfo),
-        };
-
-        VkPipelineLayoutCreateInfo pipeline_layout_info{
-                .sType                  = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
-                .setLayoutCount         = 0,
-                .pSetLayouts            = nullptr,
-                .pushConstantRangeCount = 1,
-                .pPushConstantRanges    = &push_constant_range,
-        };
-
-        res = vkCreatePipelineLayout(vulkan_device, &pipeline_layout_info, nullptr, &compute_pipeline_layout);
-
-        if (res != VK_SUCCESS) {
-                std::println("Failed creating compute pipeline layout");
-                exit(res);
-        }
-
-        // Factor out shader loading into a function which handles all this for me.
-
-        // ===== Compute Shaders ===== //
-        Slang::ComPtr<slang::IBlob>   diagnostics;
-        Slang::ComPtr<slang::IModule> slang_module{ slang_session->loadModuleFromSource("MarchingCubes", "Assets/Shaders/MarchingCubes.slang", nullptr,
-                                                                                        diagnostics.writeRef()) };
-        // or slang_session->loadModule("compute");
-
-        if (diagnostics) {
-                std::println("Slang Error: {}", (const char*)diagnostics->getBufferPointer());
-                exit(1);
-        }
-
-        Slang::ComPtr<ISlangBlob> spirv;
-        slang_module->getTargetCode(0, spirv.writeRef());
-
-        VkShaderModuleCreateInfo shader_module_info{
-                .sType    = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
-                .codeSize = spirv->getBufferSize(),
-                .pCode    = (u32*)spirv->getBufferPointer(),
-        };
-
-        VkShaderModule shader_module{};
-        res = vkCreateShaderModule(vulkan_device, &shader_module_info, nullptr, &shader_module);
-
-        if (res != VK_SUCCESS) {
-                std::println("Failed creating compute shader module");
-                exit(res);
-        }
-
-        VkPipelineShaderStageCreateInfo shader_stage_info{
-                .sType  = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
-                .stage  = VK_SHADER_STAGE_COMPUTE_BIT,
-                .module = shader_module,
-                .pName  = "Pass1",
-        };
-
-        // ===== Create Compute Pipeline ===== //
-
-        VkComputePipelineCreateInfo pipeline_info{
-                .sType  = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO,
-                .stage  = shader_stage_info,
-                .layout = compute_pipeline_layout,
-        };
-
-        vkCreateComputePipelines(vulkan_device, VK_NULL_HANDLE, 1, &pipeline_info, nullptr, &compute_pipeline);
-
-        vkDestroyShaderModule(vulkan_device, shader_module, nullptr);
-
-        // ===== Compute Command Pool ===== //
-
-        VkCommandPoolCreateInfo command_pool_info{
-                .sType            = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
-                .flags            = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,
-                .queueFamilyIndex = compute_queue_family,
-        };
-
-        res = vkCreateCommandPool(vulkan_device, &command_pool_info, nullptr, &compute_command_pool);
-
-        if (res != VK_SUCCESS) {
-                std::println("Failed to create compute command pool");
-                exit(res);
-        }
-
-        VkCommandBufferAllocateInfo compute_command_buffer_allocate_info{
-                .sType              = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
-                .commandPool        = compute_command_pool,
-                .commandBufferCount = 1,
-        };
-
-        res = vkAllocateCommandBuffers(vulkan_device, &compute_command_buffer_allocate_info, &compute_command_buffer);
-
-        if (res != VK_SUCCESS) {
-                std::println("Failed to allocate compute command buffers");
-                exit(res);
-        }
-
-        // ===== Sync ===== //
-
-        compute_fences.resize(1);
-
-        VkFenceCreateInfo fence_info{ .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO, .flags = 0 };
-
-        res = vkCreateFence(vulkan_device, &fence_info, nullptr, &compute_fences[0]);
-
-        if (res != VK_SUCCESS) {
-                std::println("Failed creating fence");
-                exit(res);
-        }
-}
-
 void GameContext::Init() {
         VkResult res{};
 
@@ -202,7 +86,7 @@ void GameContext::Init() {
         u32 physical_device_index{ 0 };
         // TODO: Either check for best device, or let user select one.
 
-        VkPhysicalDevice physical_device = physical_devices[physical_device_index];
+        physical_device = physical_devices[physical_device_index];
 
         VkPhysicalDeviceProperties2 physical_device_properties{ .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2 };
         vkGetPhysicalDeviceProperties2(physical_device, &physical_device_properties);
@@ -686,7 +570,7 @@ void GameContext::Init() {
 
         VkPushConstantRange push_constant_range{
                 .stageFlags = VK_SHADER_STAGE_VERTEX_BIT,
-                .size       = sizeof(VkDeviceAddress),
+                .size       = sizeof(ModelDrawData),
         };
 
         VkPipelineLayoutCreateInfo pipeline_layout_info{
@@ -886,7 +770,6 @@ void GameContext::Init() {
 
         vkDestroyShaderModule(vulkan_device, shader_module, nullptr);
 
-        InitComputePipeline();
         transfer_engine.Init(vulkan_device, transfer_queue_family, vulkan_allocator);
 
         // ===== Input ===== //
@@ -924,7 +807,8 @@ void GameContext::Init() {
 
         // ===== Text ===== //
 
-        text_system.Init(*this);
+        model_system.Init(this);
+        text_system.Init(this);
 }
 
 void GameContext::AddTexture(const Texture& texture, u32 index) {
@@ -950,15 +834,159 @@ void GameContext::AddTexture(const Texture& texture, u32 index) {
         vkUpdateDescriptorSets(vulkan_device, 1, &write_descriptor_set, 0, nullptr);
 }
 
+void GameContext::Resize() {
+        VkResult res;
+
+        // ===== Destroy Old Resources ===== //
+
+        vkDeviceWaitIdle(vulkan_device);
+
+        for (u32 i = 0; i < swapchain_image_views.size(); i++) {
+                vkDestroyImageView(vulkan_device, swapchain_image_views[i], nullptr);
+        }
+
+        vkDestroySwapchainKHR(vulkan_device, vulkan_swapchain, nullptr);
+
+        vkDestroyImageView(vulkan_device, depth_image_view, nullptr);
+        vmaDestroyImage(vulkan_allocator, depth_image, depth_allocation);
+
+        // ===== Re Create ===== //
+
+        VkSurfaceCapabilitiesKHR surface_capabilities{};
+        vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physical_device, vulkan_surface, &surface_capabilities);
+
+        // ===== Swapchain =====
+
+        VkExtent2D swapchain_extent{ surface_capabilities.currentExtent };
+        if (surface_capabilities.currentExtent.width == 0Xff'ff'ff'ff) { // This is a wayland thing?
+                swapchain_extent = { .width = u32(window.width), .height = u32(window.height) };
+        }
+
+        const VkFormat           image_format{ VK_FORMAT_B8G8R8A8_SRGB };
+        VkSwapchainCreateInfoKHR swapchain_info{
+                .sType            = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
+                .surface          = vulkan_surface,
+                .minImageCount    = surface_capabilities.minImageCount,
+                .imageFormat      = image_format,
+                .imageColorSpace  = VK_COLORSPACE_SRGB_NONLINEAR_KHR,
+                .imageExtent      = swapchain_extent,
+                .imageArrayLayers = 1,
+                .imageUsage       = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
+                .preTransform     = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR,
+                .compositeAlpha   = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,
+                .presentMode      = VK_PRESENT_MODE_IMMEDIATE_KHR, // TODO: this is guarateed to be available, might want to allow other settings.
+        };
+
+        res = vkCreateSwapchainKHR(vulkan_device, &swapchain_info, nullptr, &vulkan_swapchain);
+
+        if (res != VK_SUCCESS) {
+                std::println("Failed creating swapchain");
+                exit(1);
+        }
+
+        // ===== Get Swapchain Images =====
+
+        u32 image_count{ 0 };
+        res = vkGetSwapchainImagesKHR(vulkan_device, vulkan_swapchain, &image_count, nullptr);
+        if (res != VK_SUCCESS) {
+                std::println("Failed getting swapchain images");
+                exit(1);
+        }
+        swapchain_images.resize(image_count);
+        res = vkGetSwapchainImagesKHR(vulkan_device, vulkan_swapchain, &image_count, swapchain_images.data());
+        if (res != VK_SUCCESS) {
+                std::println("Failed getting swapchain images");
+                exit(1);
+        }
+
+        // ===== Create Swapchain Image Views =====
+
+        swapchain_image_views.resize(image_count);
+
+        for (u32 i = 0; i < image_count; i++) {
+                VkImageViewCreateInfo image_view_info{
+                        .sType    = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+                        .image    = swapchain_images[i],
+                        .viewType = VK_IMAGE_VIEW_TYPE_2D,
+                        .format   = image_format,
+                        .subresourceRange{ .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT, .levelCount = 1, .layerCount = 1 },
+                };
+
+                res = vkCreateImageView(vulkan_device, &image_view_info, nullptr, &swapchain_image_views[i]);
+                if (res != VK_SUCCESS) {
+                        std::println("Failed creating swapchain image view");
+                        exit(res);
+                }
+        }
+
+        // ===== Depth Image ===== //
+
+        std::vector<VkFormat> depth_format_list{ VK_FORMAT_D24_UNORM_S8_UINT, VK_FORMAT_D32_SFLOAT_S8_UINT }; // at least one is guaranteed
+
+        VkFormat depth_format{ VK_FORMAT_UNDEFINED };
+        for (VkFormat format : depth_format_list) {
+                VkFormatProperties2 format_properties{ .sType = VK_STRUCTURE_TYPE_FORMAT_PROPERTIES_2 };
+                vkGetPhysicalDeviceFormatProperties2(physical_device, format, &format_properties);
+                if (format_properties.formatProperties.optimalTilingFeatures & VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT) {
+                        depth_format = format;
+                        break;
+                }
+        }
+
+        if (depth_format == VK_FORMAT_UNDEFINED) {
+                std::println("Failed finding supported depth format");
+                exit(1);
+        }
+
+        VkImageCreateInfo depth_image_info{
+                .sType     = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+                .imageType = VK_IMAGE_TYPE_2D,
+                .format    = depth_format,
+                .extent{
+                        .width  = (u32)window.width,
+                        .height = (u32)window.height,
+                        .depth  = 1,
+                },
+                .mipLevels     = 1,
+                .arrayLayers   = 1,
+                .samples       = VK_SAMPLE_COUNT_1_BIT,
+                .tiling        = VK_IMAGE_TILING_OPTIMAL,
+                .usage         = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
+                .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+        };
+
+        VmaAllocationCreateInfo depth_allocation_info{ .flags = VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT, .usage = VMA_MEMORY_USAGE_AUTO };
+        res = vmaCreateImage(vulkan_allocator, &depth_image_info, &depth_allocation_info, &depth_image, &depth_allocation, nullptr);
+
+        if (res != VK_SUCCESS) {
+                std::println("Failed depth image allocation");
+                exit(res);
+        }
+
+        VkImageViewCreateInfo depth_view_info{
+                .sType    = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+                .image    = depth_image,
+                .viewType = VK_IMAGE_VIEW_TYPE_2D,
+                .format   = depth_format,
+                .subresourceRange{
+                        .aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT,
+                        .levelCount = 1,
+                        .layerCount = 1,
+                },
+        };
+
+        res = vkCreateImageView(vulkan_device, &depth_view_info, nullptr, &depth_image_view);
+
+        if (res != VK_SUCCESS) {
+                std::println("Failed creating depth image view");
+                exit(res);
+        }
+}
+
 void GameContext::Shutdown() {
         vkDeviceWaitIdle(vulkan_device);
 
-        // ===== Destroy Models ===== //
-
-        // for (u64 i = 0; i < models.size(); i++) {
-        //         Model& model = models[i];
-        //         model.Destroy(*this);
-        // }
+        text_system.Shutdown();
 
         // ===== Input ===== //
 
@@ -967,16 +995,6 @@ void GameContext::Shutdown() {
         // ===== Transfer ===== //
 
         transfer_engine.Shutdown();
-
-        // ===== Compute ===== //
-
-        vkDestroyCommandPool(vulkan_device, compute_command_pool, nullptr);
-        vkDestroyFence(vulkan_device, compute_fences[0], nullptr);
-
-        vkDestroyPipelineLayout(vulkan_device, compute_pipeline_layout, nullptr);
-        vkDestroyPipeline(vulkan_device, compute_pipeline, nullptr);
-        vkDestroyDescriptorSetLayout(vulkan_device, compute_descriptor_set_layout, nullptr);
-        vkDestroyDescriptorPool(vulkan_device, compute_descriptor_pool, nullptr);
 
         // ===== Graphics + Vulkan ===== //
 
@@ -1016,6 +1034,11 @@ void GameContext::Shutdown() {
 }
 
 void GameContext::Render(const Camera& camera) {
+        if (window.is_resized) {
+                Resize();
+                window.is_resized = false;
+        }
+
         VkResult res{};
         res = vkWaitForFences(vulkan_device, 1, &fences[frame_index], true, u64_max);
 
@@ -1025,7 +1048,6 @@ void GameContext::Render(const Camera& camera) {
         }
 
         res = vkResetFences(vulkan_device, 1, &fences[frame_index]);
-        frames_submitted++;
 
         if (res != VK_SUCCESS) {
                 std::println("Failed resetting fences");
@@ -1171,55 +1193,21 @@ void GameContext::Render(const Camera& camera) {
         vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
         vkCmdSetScissor(command_buffer, 0, 1, &scissor);
 
+        vkCmdBindDescriptorSets(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_layout, 0, 1, &descriptor_set, 0, nullptr);
+
+        // ===== Update Per Frame Data ===== //
+
         FrameDrawData per_frame_data{
                 camera.GetProjectionMatrix(),
                 camera.GetViewMatrix(),
         };
 
+        // std::println("Mat: {}", per_frame_data.view_matrix);
+
         u64 frame_draw_data_offset = frame_index * sizeof(FrameDrawData);
         memcpy(((u8*)per_frame_draw_buffer.allocation_info.pMappedData) + frame_draw_data_offset, &per_frame_data, sizeof(FrameDrawData));
 
-        vkCmdBindDescriptorSets(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_layout, 0, 1, &descriptor_set, 0, nullptr);
-
-        // Draw Models
-        assert(max_draw_count > models.size());
-        for (u32 i = 0; i < models.size(); i++) {
-
-                // All below can be made into model member function
-                Model& model = models[i];
-
-                if (model.meshes[0].index_count == 0) continue;
-
-                // shader_draw_data.projection = camera.GetProjectionMatrix();
-                // shader_draw_data.view       = camera.GetViewMatrix();
-
-                for (u32 instance_index = 0; instance_index < model.instances.size(); instance_index++) {
-                        InstanceDrawData instance_draw_data{};
-
-                        instance_draw_data.model_matrix = glm::translate(Mat4(1.0f), model.instances[instance_index].transform.position);
-                        instance_draw_data.model_matrix = glm::scale(instance_draw_data.model_matrix, model.instances[instance_index].transform.scale);
-                        // Rotate
-
-                        u64 draw_data_offset = sizeof(InstanceDrawData) * model.max_instance_count * frame_index;
-                        memcpy((u8*)model.instance_buffer.allocation_info.pMappedData + draw_data_offset, &instance_draw_data, sizeof(InstanceDrawData));
-                }
-
-                u64 draw_data_offset = sizeof(InstanceDrawData) * i;
-                memcpy((u8*)draw_data[frame_index].allocation_info.pMappedData + draw_data_offset, &model.material, sizeof(Material));
-
-                VkDeviceSize vertex_offset[2] = { 0, 0 };
-                VkBuffer     buffers[2]       = { model.meshes[0].buffer.buffer, model.instance_buffer.buffer };
-                vkCmdBindVertexBuffers(command_buffer, 0, 2, &buffers[0], &vertex_offset[0]);
-
-                u32 index_offset = model.meshes[0].vertices_size;
-                vkCmdBindIndexBuffer(command_buffer, model.meshes[0].buffer.buffer, index_offset, VK_INDEX_TYPE_UINT32);
-
-                // I can just store a vector for each frame and clear when its finished, push back, pass pointer, and use other next vector next frame.
-                u64 device_address = draw_data[frame_index].device_address + draw_data_offset;
-                vkCmdPushConstants(command_buffer, pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(VkDeviceAddress), &device_address);
-
-                vkCmdDrawIndexed(command_buffer, (u32)model.meshes[0].index_count, model.instances.size(), 0, 0, 0);
-        }
+        model_system.Draw(command_buffer, frame_index);
 
         vkCmdEndRendering(command_buffer);
 
@@ -1274,6 +1262,8 @@ void GameContext::Render(const Camera& camera) {
                 std::println("Failed to submit queue: {}", (i32)res);
                 exit(res);
         }
+
+        frames_submitted++;
 
         frame_index = (frame_index + 1) % max_frames_in_flight;
 
@@ -1330,75 +1320,47 @@ void Game::Init() {
 
         // ===== Mesh Data =====
 
-        RenderedText r_text;
-        r_text.SetText("Hello World");
-        r_text.Draw(game_context.text_system);
-        game_context.models.push_back(game_context.text_system.model);
-
         // Skysphere
         {
-                Model model;
-                model.LoadFromOBJ(game_context, "Assets/Models/SkySphere.obj", 1);
-                // model.LoadFromOBJ(game_context, "Assets/Models/test.obj");
-                model.material.type = MaterialID::SkyMap;
-                model.instances.emplace_back(Transform{Vec3(0, 0, 0), Quat{}, Vec3(10, 10, 10)}, 0);
-                game_context.models.push_back(model);
+                sky_sphere_model = game_context.model_system.LoadModel("Assets/Models/SkySphere.obj", 1);
+
+                skymap.Load(game_context.vulkan_device, game_context.graphics_command_pool, game_context.graphics_queue, "Assets/SkyMaps/SpaceLDR.ktx",
+                            game_context.vulkan_allocator);
+                game_context.AddTexture(skymap, 0);
+
+                Material sky_map_material{
+                        .type   = MaterialType::SkyMap,
+                        .skymap = { .texture_id = 0 },
+                };
+
+                game_context.model_system[sky_sphere_model].material = sky_map_material;
+
+                sky_sphere                 = game_context.model_system.CreateModelInstance(sky_sphere_model);
+                sky_sphere.transform.scale = { 10.0f, 10.0f, 10.0f };
         }
 
         // test mesh
         {
-                Model model;
-                model.LoadFromOBJ(game_context, "Assets/Models/test.obj", 1);
-                model.material.type = MaterialID::Text;
-                model.instances.emplace_back(Transform{Vec3(0, 0, 0), Quat{}, Vec3(1, 1, 1)}, 0);
-                game_context.models.push_back(model);
-        }
+                box_model = game_context.model_system.LoadModel("Assets/Models/test.obj", 1);
 
-        // ===== Textures ===== //
+                Material material{
+                        .type = MaterialType::Basic,
+                };
 
-        skymap.Load(game_context.vulkan_device, game_context.graphics_command_pool, game_context.graphics_queue, "Assets/SkyMaps/SpaceLDR.ktx",
-                    game_context.vulkan_allocator);
-        game_context.AddTexture(skymap, 0);
+                game_context.model_system[box_model].material = material;
 
-
-        ground_texture.Load(game_context.vulkan_device, game_context.graphics_command_pool, game_context.graphics_queue, "Assets/Textures/ForestGround.ktx",
-                            game_context.vulkan_allocator);
-        game_context.AddTexture(ground_texture, 1);
-
-        ground_normal_texture.Load(game_context.vulkan_device, game_context.graphics_command_pool, game_context.graphics_queue,
-                                   "Assets/Textures/ForestGroundNormal.ktx", game_context.vulkan_allocator);
-        game_context.AddTexture(ground_normal_texture, 2);
-
-        ground_disp_texture.Load(game_context.vulkan_device, game_context.graphics_command_pool, game_context.graphics_queue,
-                                 "Assets/Textures/ForestGroundDisp.ktx", game_context.vulkan_allocator);
-        game_context.AddTexture(ground_disp_texture, 3);
-
-        for (u32 i = 0; i < 26; i++) {
-                std::string letter_path = "Assets/Text/";
-                letter_path += 'A' + i;
-                letter_path += ".ktx";
-
-                text[i].Load(game_context.vulkan_device, game_context.graphics_command_pool, game_context.graphics_queue, letter_path,
-                             game_context.vulkan_allocator);
-
-                game_context.AddTexture(text[i], 99 - i); // A at back
+                test_box                 = game_context.model_system.CreateModelInstance(box_model);
+                test_box.transform.scale = { 1.0f, 1.0f, 1.0f };
         }
 }
 
 void Game::Shutdown() {
         vkDeviceWaitIdle(game_context.vulkan_device);
 
-        game_context.models[1].Destroy(game_context);
-        game_context.models[2].Destroy(game_context);
+        // game_context.models[1].Destroy(game_context);
+        // game_context.models[2].Destroy(game_context);
 
-        skymap.Destroy(game_context);
-        ground_texture.Destroy(game_context);
-        ground_normal_texture.Destroy(game_context);
-        ground_disp_texture.Destroy(game_context);
-
-        for (u32 i = 0; i < 26; i++) {
-                text[i].Destroy(game_context);
-        }
+        skymap.Destroy(&game_context);
 
         planet.Shutdown();
         camera_controller.Shutdown();
@@ -1410,7 +1372,7 @@ void Game::Update(float delta_time) {
         camera.Update(game_context);
         camera_controller.Update(delta_time);
 
-        game_context.models[1].instances[0].transform.position = camera.game_object.position;
+        sky_sphere.transform.position = camera.game_object.position;
 
         planet.Update();
 }
@@ -1421,6 +1383,9 @@ void Game::Run() {
 
         u64   frame_count = 0;
         float frame_time  = 0;
+
+        RenderedText r_text;
+        r_text.SetText(&game_context.text_system, "The Lonely\n  Asteroid");
 
         while (running) {
                 // ===== Delta Time ===== //
@@ -1443,15 +1408,26 @@ void Game::Run() {
 
                 // ===== Gameplay Update ===== //
 
-                game_context.models.resize(3);
-                game_context.models.reserve(planet.chunks_to_render.size() + 3);
+                // game_context.models.resize(3);
+                // game_context.models.reserve(planet.chunks_to_render.size() + 3);
 
                 Update(delta_time);
 
+                r_text.Draw(&game_context.text_system);
+
                 for (u32 i = 0; i < planet.chunks_to_render.size(); i++) {
-                        game_context.models.push_back(planet.chunks[planet.chunks_to_render[i]].model);
-                        planet.chunks[planet.chunks_to_render[i]].model.last_frame_rendered = game_context.GetLastFinishedFrame() + 2;
+                        // game_context.models.push_back(planet.chunks[planet.chunks_to_render[i]].model);
+                        // planet.chunks[planet.chunks_to_render[i]].model.last_frame_rendered = game_context.GetLastFinishedFrame() + 2;
+                        ModelInstance instance{
+                                .model_id   = planet.chunks[planet.chunks_to_render[i]].model_id,
+                                .transform  = {},
+                                .user_value = {},
+                        };
+
+                        game_context.model_system.Draw(instance);
                 }
+
+                game_context.model_system.Draw(sky_sphere);
 
                 // ===== Render ===== //
 
