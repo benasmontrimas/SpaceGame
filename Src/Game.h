@@ -1,122 +1,62 @@
 #pragma once
 
-#include "vulkan/vulkan.h"
-#include <vma/vk_mem_alloc.h>
-
-#include "slang/slang-com-ptr.h"
-#include "slang/slang.h"
-
-#include <vector>
-
 #include "Camera.h"
+#include "GameContext.h"
 #include "InputSystem.h"
 #include "Model.h"
 #include "Planet.h"
 #include "Resources.h"
+#include "SoundSystem.h"
+#include "UISystem.h"
 
-struct SDL_Window;
+enum class MenuButtonID {
+        Start,
+        Quit,
 
-struct Window {
-        SDL_Window* window;
-        i32         width;
-        i32         height;
-        bool is_resized;
+        Count,
 };
 
-// ====== //
-
-static constexpr u32 max_frames_in_flight{ 2 };
-static constexpr u32 max_draw_count{ 10'000 };
-
-// NOTE: Can I split out core stuff into a GameContext struct so that I can pass that around to systems and have gameplay in Game.
-
-struct GameContext {
-        void Init();
-
+struct MenuController {
+        void Init(GameContext* _game_context, Transform* _owner);
+        void Update(float delta_time);
         void Shutdown();
 
-        void Render(const Camera& camera);
-        void Resize();
+        GameContext* game_context;
+        Transform*   owner;
 
-        // ====== //
+        Quat movement_rot;
 
-        Window window;
+        Vec3  world_up;
+        float movement_speed{ 200.0f };
+};
 
-        VmaAllocator vulkan_allocator;
+struct MainMenu {
+        void Start(GameContext* _game_context);
+        bool Update(float delta_time);
+        void Stop();
 
-        VkInstance       vulkan_instance;
-        VkPhysicalDevice physical_device;
-        VkDevice         vulkan_device;
-        VkSurfaceKHR     vulkan_surface;
-        VkSwapchainKHR   vulkan_swapchain;
+        GameContext* game_context;
 
-        u32 graphics_queue_family;
-        u32 compute_queue_family;
-        u32 transfer_queue_family;
+        RenderedText title_text;
 
-        VkQueue graphics_queue;
-        VkQueue compute_queue;
+        RenderedText menu_buttons[(u32)MenuButtonID::Count];
+        MenuButtonID selected_button;
 
-        std::vector<VkImage>     swapchain_images;
-        std::vector<VkImageView> swapchain_image_views;
+        ModelInstance logo_image;
+        ModelInstance logo_background;
+        RenderedText  presents_text;
 
-        VkImage       depth_image;
-        VkImageView   depth_image_view;
-        VmaAllocation depth_allocation;
+        Action* menu_up_action;
+        Action* menu_down_action;
+        Action* menu_accept_action;
+        Action* exit_action;
 
-        GPUBuffer draw_data[max_frames_in_flight];
+        Sound ui_sound;
 
-        // ===== Sync ===== //
+        float time_active{};
 
-        std::vector<VkSemaphore> render_semaphores;
-        VkSemaphore              present_semaphores[max_frames_in_flight];
-        VkFence                  fences[max_frames_in_flight];
-
-        // ===== Render ===== //
-
-        VkCommandPool   graphics_command_pool;
-        VkCommandBuffer graphics_command_buffers[max_frames_in_flight];
-
-        VkDescriptorSetLayout descriptor_set_layout;
-        VkDescriptorPool      descriptor_pool;
-        VkDescriptorSet       descriptor_set;
-
-        VkPipelineLayout pipeline_layout;
-        VkPipeline       pipeline;
-
-        // ===== Slang ==== //
-
-        Slang::ComPtr<slang::IGlobalSession> slang_global_session;
-        Slang::ComPtr<slang::ISession>       slang_session;
-
-        // ===== Transfer Pipeline ===== //
-
-        TransferEngine transfer_engine;
-
-        // ===== Render Data ===== //
-
-        u32 frame_index{};
-        u32 image_index{};
-
-        u64 frames_submitted{ max_frames_in_flight }; // (frames_submitted - max_frames_in_flight) == last know finished frame
-
-        bool swapchain_needs_resizing{ false };
-
-        GPUBuffer per_frame_draw_buffer;
-
-        // ===== Systems ===== //
-
-        InputSystem input_system;
-        TextSystem  text_system;
-        ModelSystem model_system;
-
-        // ===== Functions ===== //
-
-        u32 GetLastFinishedFrame() const {
-                return u32(frames_submitted - max_frames_in_flight);
-        }
-
-        void AddTexture(const Texture& texture, u32 index);
+        Camera         camera;
+        MenuController camera_controller;
 };
 
 struct Game {
@@ -129,7 +69,6 @@ struct Game {
 
         Planet planet;
 
-        ModelID letter_quad_model;
         ModelID sky_sphere_model;
         ModelID box_model;
 
@@ -140,10 +79,7 @@ struct Game {
         ModelInstance test_box;
 
         // Actions
-        Action* forward_action;
-        Action* back_action;
-        Action* right_action;
-        Action* left_action;
+        Action* mouse_focus_action;
 
         Camera            camera;
         DefaultController camera_controller;

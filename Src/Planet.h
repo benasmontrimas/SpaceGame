@@ -42,8 +42,8 @@ constexpr u32   CHUNK_LOD_DISTANCE_COUNT                      = 10;
 constexpr float CHUNK_LOD_DISTANCES[CHUNK_LOD_DISTANCE_COUNT] = {
         // 0, 32, 64, 128, 256, 1'024,
         // 1000, 1000, 1000, 1000, 1000, 1000,
-        1,     1,     100,   100,  100, 100,
-        1'000, 1'000, 1'000, 5'000
+        2,     5,     10,    50,   100, 400,
+        1'000, 2'000, 3'000, 5'000
         // 1, 1, 100, 1000, 10000, 100000
 };
 
@@ -92,11 +92,11 @@ constexpr u32 TREE_MAX_LOD       = GetMaxTreeLevels();
 // == External == //
 
 struct GameContext;
-struct GameObject;
+struct Transform;
 
 // == Internal == //
 
-enum class PlanetGenerationState : u32;
+enum class ChunkState : u32;
 
 struct PlanetChunk;
 struct PlanetChunkNode;
@@ -117,13 +117,15 @@ enum class PlanetProcessingStages : u32 {
         StageOne,
         AllocateBuffers,
         StageTwo,
+        CopyMeshData,
+        CreatingBVH,
         Finished,
 
         Count,
 };
 
 // Keeps track of a chunks state.
-enum class PlanetGenerationState : u32 {
+enum class ChunkState : u32 {
         None,
 
         Waiting,
@@ -143,8 +145,8 @@ enum class PlanetGenerationState : u32 {
 
 // The planet chunks
 struct PlanetChunk {
-        PlanetGenerationState state;
-        Vec3                  position;
+        ChunkState state;
+        Vec3       position;
 
         union {
                 u32 lod;
@@ -156,13 +158,13 @@ struct PlanetChunk {
         bool    is_empty = false;
 
         // bool IsEmpty() const {
-        //         if (state == PlanetGenerationState::Processing) return false;
+        //         if (state == ChunkState::Processing) return false;
         //         return model_id == u32_max;
         // }
 
         bool IsRenderReady() const {
                 if (model_id == u32_max) return false;
-                return state == PlanetGenerationState::Initialised and !is_empty;
+                return state == ChunkState::Initialised and !is_empty;
         }
 
         // ===== Experimental ===== //
@@ -175,16 +177,12 @@ struct PlanetChunk {
 struct PlanetChunkNode {
         // ===== Members ===== //
 
-        // NOTE: If desperate to reduce size, use 30 bits for index, and last 2 for the states. 0 has child, 1 has chunk, 2 empty
-        // Unlikely we have over a billion chunks/nodes
         NodeID  first_child_index;
         ChunkID chunk_index;
 
         // ===== Functions ===== //
 
         bool IsEmpty() const {
-                assert((chunk_index == NO_CHUNK or first_child_index == NO_CHILDREN) and "Node should never have a chunk and children at the same time");
-
                 return chunk_index == EMPTY_CHUNK;
         }
 
@@ -211,13 +209,16 @@ struct PlanetChunkTree {
         void Update();
         void Shutdown();
 
-        void   Traverse(NodeID node_index, AABB bounds, u32 lod);
-        void   Split(NodeID node_index, AABB bounds, u32 lod);
-        void   HandleLeaf(NodeID node_index, AABB bounds, u32 lod);
+        void   Traverse(NodeID node_index, AABB bounds, u32 lod, bool waited_on);
+        void   TraverseChildren(NodeID node_index, AABB bounds, u32 lod, bool waited_on);
+        void   Split(NodeID node_index, AABB bounds, u32 lod, bool waited_on);
+        void   HandleLeaf(NodeID node_index, AABB bounds, u32 lod, bool waited_on);
         NodeID AddChildren(NodeID node_index);
         void   RemoveChildren(NodeID node_index);
         void   CreateNodesChunk(NodeID node_index, AABB bounds, u32 lod);
         void   DestroyNodesChunk(NodeID node_index);
+
+        bool AreAllChildrenInitialised(NodeID node_index);
 
         // Use to set empty to false so that we re-check the node
         void DirtyNode(NodeID node_index);
@@ -226,6 +227,8 @@ struct PlanetChunkTree {
                 NodeID parent_index = parent_indices[node_index / 8];
                 return parent_index;
         }
+
+        float RayIntersect(NodeID node_index, AABB bounds, Ray ray, float ray_length);
 };
 
 // Struct passed to GPU for generating chunks.
@@ -270,6 +273,9 @@ struct PlanetChunkProgress {
         GPUBuffer normal_buffer;
 
         u32 resource_index;
+
+        u8*           mesh_data;
+        TransferJobID copy_id;
 };
 
 struct Planet {
@@ -317,7 +323,7 @@ struct Planet {
 
         PlanetChunkTree tree;
 
-        GameObject* target;
+        Transform* target;
 
         Texture ground_texture;
         Texture ground_normal_texture;
@@ -327,7 +333,7 @@ struct Planet {
 
         // ===== Functions ===== //
 
-        void Init(GameContext* _game_context, GameObject* _target);
+        void Init(GameContext* _game_context, Transform* _target);
         void Shutdown();
         void Update();
 
@@ -345,4 +351,6 @@ struct Planet {
         void RecordStageOne(PlanetChunkProgress& chunk_progress);
         void AllocateBuffers(PlanetChunkProgress& chunk_progress);
         void RecordStageTwo(PlanetChunkProgress& chunk_progress);
+
+        float CheckIntersection(Ray ray, float distance);
 };

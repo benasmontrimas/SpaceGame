@@ -7,20 +7,13 @@
 // If we want something to have a mesh we have to pass the owning game object.
 // That was it can use its transform for rendering, and it will sync with other systems.
 
-// Then just store an array of children so that we can have objects relative to other objects
-struct GameObject {
-        Vec3 position{ 0, 0, 0 };
-        Quat rotation;
-        Vec3 scale{ 1, 1, 1 };
-};
-
 struct Camera {
-        GameObject game_object{ .position = { 10, 10'000, 0 } };
+        Transform game_object{ .position = { 10, 10'000, 0 } };
 
         float fov{ 60.0f };
         float aspect_ratio{ 1.0f };
         float near{ 0.1f };
-        float far{ 20'000.0f };
+        float far{ 100'000.0f };
 
         void Update(GameContext& game_context);
 
@@ -44,11 +37,11 @@ struct DefaultController {
         float mouse_sensitivity{ 0.001f }; // Probably want as part of input
 
         GameContext* game_context;
-        GameObject*  owner;
+        Transform*   owner;
 
         Vec3 world_up;
 
-        void Init(GameContext& _game_context, GameObject& _owner);
+        void Init(GameContext& _game_context, Transform& _owner);
         void Shutdown();
         void Update(float delta_time);
 };

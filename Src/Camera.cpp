@@ -53,7 +53,7 @@ Mat4 Camera::GetProjectionMatrix() const {
 }
 
 // Need to pass the owner here.
-void DefaultController::Init(GameContext& _game_context, GameObject& _owner) {
+void DefaultController::Init(GameContext& _game_context, Transform& _owner) {
         game_context = &_game_context;
 
         // Check if Input Actions already exist

@@ -68,7 +68,7 @@ constexpr u64 staging_buffer_block_size       = 4 * KiloByte;
 constexpr u64 staging_buffer_block_count      = 65'536;
 constexpr u64 staging_buffer_total_size       = staging_buffer_block_size * staging_buffer_block_count;
 constexpr u32 staging_buffer_max_free_regions = max_transfers_in_flight + 1;
-constexpr u32 max_transfer_engine_jobs        = 1'000;
+constexpr u32 max_transfer_engine_jobs        = 10'000;
 constexpr u32 transfer_queue_end              = max_transfer_engine_jobs;
 
 /*
@@ -106,6 +106,7 @@ struct GPUBufferReadInfo {
         u8*        dst;
 
         u32          src_queue_family;
+        u32          dst_queue_family;
         BufferRegion staging_buffer_region;
 };
 
@@ -115,6 +116,7 @@ struct GPUBufferWriteInfo {
         u64        size;
         GPUBuffer* dst;
 
+        u32          src_queue_family;
         u32          dst_queue_family;
         BufferRegion staging_buffer_region; // This doesnt really make sense here..
 };
@@ -159,11 +161,8 @@ struct TransferEngine {
         BufferRegion GetStagingBufferRegion(u64 size);
         void         ReleaseStagingBufferRegion(BufferRegion buffer_region);
 
-        TransferJobID PopNextFreeTransferJob();
-        TransferJobID PopNextPendingTransferJob();
-
-        void AddPendingJob(TransferJobID id);
-        void FreeJob(TransferJobID id);
+        TransferJobID GetJob();
+        void          FreeJob(TransferJobID id);
 
         TransferJobID QueueGPUBufferRead(GPUBufferReadInfo read_job);
         TransferJobID QueueGPUBufferWrite(GPUBufferWriteInfo write_job);
@@ -179,24 +178,17 @@ struct TransferEngine {
         VkQueue queue;
 
         GPUBuffer    staging_buffer;
-        // Could just make free regions a double linked list, makes it easier to add and remove... its never that big to really matter though.
         u32          free_staging_buffer_region_count;
         BufferRegion free_staging_buffer_regions[staging_buffer_max_free_regions];
 
-        VkCommandPool   command_pool;
+        VkCommandPool command_pool;
+
         VkCommandBuffer command_buffers[max_transfers_in_flight]; // Probably want multiple
         VkFence         fences[max_transfers_in_flight];
         bool            fence_in_use[max_transfers_in_flight];
 
-        u32 transfer_index{}; // Used to mark index after the last used, as this is most likely to be ready.
-
         // ===== Transfer Jobs Queue ===== //
 
-        // NOTE: Staging buffer usage can be optimized by splitting jobs up. If a job doesnt fit, start a job that copies what fits
-        // and process the rest once space frees up. This means we can get 100% staging buffer use whilst we have atleast 100% the
-        // space queued. Issue is this would call lots of small copy commands, so would need to check if performance actually improves.
-        TransferJobID first_free;
-        TransferJobID first_pending;
-        TransferJobID last_pending;
-        TransferJob   transfer_jobs[max_transfer_engine_jobs];
+        std::vector<TransferJob> transfer_jobs;
+        u32                      next_free_job;
 };

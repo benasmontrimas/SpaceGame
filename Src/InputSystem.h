@@ -496,6 +496,7 @@ struct Action {
         std::string              name;
         std::vector<InputAction> inputs;
         ActionValue              value;
+        ActionValue              last_value;
         ActionType               type;
 
         float GetScalar() {
@@ -506,6 +507,14 @@ struct Action {
         Vec2 GetAxis() {
                 assert(type == ActionType::Axis);
                 return value.axis;
+        }
+
+        bool IsPressed() {
+                return last_value.scalar == 0 and value.scalar > 0;
+        }
+
+        bool IsReleased() {
+                return value.scalar == 0 and last_value.scalar > 0;
         }
 
         void AddInput(InputAction input) {

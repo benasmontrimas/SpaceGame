@@ -17,3 +17,5 @@ VulkanLog.txt
 *.ktx
 *.png
 *.exr
+*.wav
+*.mp3

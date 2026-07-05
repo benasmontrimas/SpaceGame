@@ -49,7 +49,7 @@ struct Vertex {
 };
 
 struct Normals {
-        float3[4] normals;
+        float4[4] normals;
 }
 
 struct PlanetInfo {
@@ -141,18 +141,15 @@ float GetDensity(float3 position) {
 
         float offset = 0;
 
-        float mult = Perlin(position / 2000.0);
+        float mult = Perlin(position / 500.0);
 
-        offset += Perlin(position / 498.0) * 180.6 * mult;
-        offset += Perlin(position / 326.0) * 112.3 * mult;
-        offset += Perlin(position / 205.0) * 100.5 * mult;
+        offset += Perlin(position / 498.0) * 80.6 * mult;
+        offset += Perlin(position / 326.0) * 92.3 * mult;
+        offset += Perlin(position / 205.0) * 50.5 * mult;
         offset += Perlin(position / 303.0) * 78.4;
         offset += Perlin(position / 99.4) * 20.3;
         offset += Perlin(position / 42.0) * 5.8;
         offset += Perlin(position / 11.0) * 1.1;
-        offset += Perlin(position * 1.8) * 0.08;
-        offset += Perlin(position * 8.0) * 0.05;
-        offset += Perlin(position * 104.0) * 0.01;
 
         float a = smoothstep(0.0, 1.0, (100.0 - offset) / 30.0);
 
@@ -835,10 +832,10 @@ void Pass4(uint3 dispatch_id : SV_DispatchThreadID) {
                                 // info.vertices[current_vertex_offset].position = float3(1);
 
                                 // Store
-                                info.normals[vertex_ind].normals[0] = {};
-                                info.normals[vertex_ind].normals[1] = {};
-                                info.normals[vertex_ind].normals[2] = {};
-                                info.normals[vertex_ind].normals[3] = {};
+                                info.normals[vertex_ind].normals[0] = { 0 };
+                                info.normals[vertex_ind].normals[1] = { 0 };
+                                info.normals[vertex_ind].normals[2] = { 0 };
+                                info.normals[vertex_ind].normals[3] = { 0 };
 
                                 // edge_vertex_index[edge_id] = 0;
                                 edge_vertex_index[edge_id] = (i32)vertex_ind;
@@ -1016,6 +1013,8 @@ Pass5(uint3 dispatch_id : SV_DispatchThreadID, uint group_index : SV_GroupIndex)
         }
 
         for (u32 x = 0; x < cell_count; x++) {
+                // if (x == 0) printf("Start: %u, sum_index %u, end: %u\n", start_offset, first_sum_index, end_offset);
+
                 u32 edge_index = first_edge_index + x;
 
                 u32 edge_value   = info.edges[edge_index];
@@ -1038,29 +1037,31 @@ Pass5(uint3 dispatch_id : SV_DispatchThreadID, uint group_index : SV_GroupIndex)
                         float3 e0 = normalize(v2 - v0);
                         float3 e1 = normalize(v1 - v0);
 
-                        if (abs(dot(e0, e1)) >= 0.9999f) continue;
-                        float3 normal = cross(e0, e1);
+                        float3 normal = normalize(cross(e0, e1));
+
+                        if (any(isnan(normal))) continue;
 
                         u32 normal_index0 = edge_id0 >> 1;
                         if (normal_index0 > 3) normal_index0 = edge_id0 - 8;
-                        info.normals[i0].normals[normal_index0] = normal;
+                        // if (info.normals[i0].normals[normal_index0].x != 0 || info.normals[i0].normals[normal_index0].y != 0 ||
+                        // info.normals[i0].normals[normal_index0].z != 0) printf("Normal: %f %f %f\n", info.normals[i0].normals[normal_index0].x,
+                        // info.normals[i0].normals[normal_index0].y, info.normals[i0].normals[normal_index0].z);
+                        info.normals[i0].normals[normal_index0].xyz = normal;
 
                         u32 normal_index1 = edge_id1 >> 1;
                         if (normal_index1 > 3) normal_index1 = edge_id1 - 8;
-                        info.normals[i1].normals[normal_index1] = normal;
+                        info.normals[i1].normals[normal_index1].xyz = normal;
 
                         u32 normal_index2 = edge_id2 >> 1;
                         if (normal_index2 > 3) normal_index2 = edge_id2 - 8;
-                        info.normals[i2].normals[normal_index2] = normal;
+                        info.normals[i2].normals[normal_index2].xyz = normal;
 
                         start_offset += 3;
-
-                        if (normal_index0 > 3 || normal_index1 > 3 || normal_index2 > 3) printf("[SHADER] ERROR");
                 }
         }
 }
 
-[[shader("compute")]] [[require(spvGroupNonUniformBallot, SPV_KHR_non_semantic_info)]] [[numthreads(64, 1, 1)]] void
+[[shader("compute")]] [[require(spvGroupNonUniformBallot, SPV_KHR_non_semantic_info)]] [[numthreads(127, 1, 1)]] void
 Pass6(uint3 dispatch_id : SV_DispatchThreadID, uint group_index : SV_GroupIndex) {
         if (dispatch_id.x >= info.chunk_cells) return;
 
@@ -1114,16 +1115,21 @@ Pass6(uint3 dispatch_id : SV_DispatchThreadID, uint group_index : SV_GroupIndex)
 
         for (u32 i = 0; i < lane_work_count; i++) {
                 u32 index = start_index + i;
+
                 if (index > vertex_count - 1) return;
 
-                float3 normal = {};
+                float3 normal = { 0, 0, 0 };
 
                 for (u32 n = 0; n < 4; n++) {
-                        normal += info.normals[index].normals[n];
+                        normal += info.normals[index].normals[n].xyz;
                 }
 
-                if (dot(normal, normal) < 0.00001f) continue;
+                if (any(isnan(normal)) || all(normal == 0.0)) normal = world_position;
+                // if () printf("NAN");
+                // if (any(isinf(normal)))printf("INF");
+
                 info.vertices[index].normal = normalize(normal);
+                // info.vertices[index].normal = info.normals[index].normals[3].xyz;
         }
 }
 

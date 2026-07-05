@@ -41,8 +41,6 @@ int main(int argc, const char* argv[]) {
         std::filesystem::path shader_folder = "Assets/Shaders/";
         std::filesystem::path shader_file = argv[1];
 
-        std::println("{}", (shader_folder / shader_file).c_str());
-
         if (!std::filesystem::exists(shader_file)) {
                 if (!std::filesystem::exists(shader_folder / shader_file)) {
                         std::println("Cannot find shader file");

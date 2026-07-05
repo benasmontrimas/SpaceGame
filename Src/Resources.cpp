@@ -182,14 +182,7 @@ void TransferEngine::Init(VkDevice device, u32 transfer_queue_family_index, VmaA
 
         // ===== Initialise Job Queue ===== //
 
-        for (u32 i = 0; i < max_transfer_engine_jobs; i++) {
-                transfer_jobs[i].next = i + 1;
-                transfer_jobs[i].id   = i;
-        }
-
-        first_free    = 0;
-        first_pending = transfer_queue_end;
-        last_pending  = transfer_queue_end;
+        next_free_job = 0;
 }
 
 void TransferEngine::Shutdown() {
@@ -209,77 +202,74 @@ void TransferEngine::Update() {
 
         VkResult res{};
 
-        while (true) {
-                if (first_pending == transfer_queue_end) break;
+        TransferJobID free_job                    = next_free_job;
+        u32           last_checked_resource_index = 0;
+
+        for (u32 job_index = 0; job_index < transfer_jobs.size(); job_index++) {
+                if (job_index == free_job) {
+                        free_job = transfer_jobs[job_index].next;
+                        continue;
+                }
 
                 // ===== Find a Free Fence ===== //
 
-                bool found = false;
-                u32  index;
+                u32 resource_index = u32_max;
 
-                for (u32 i = 1; i <= max_transfers_in_flight; i++) {
-                        index = (transfer_index + i) % max_transfers_in_flight;
+                for (u32 i = last_checked_resource_index; i < max_transfers_in_flight; i++) {
+                        last_checked_resource_index = i;
 
-                        if (fence_in_use[index]) continue;
+                        if (fence_in_use[i]) continue;
 
-                        res = vkGetFenceStatus(vulkan_device, fences[index]);
+                        // std::println("Fence: {}", i);
+                        res = vkGetFenceStatus(vulkan_device, fences[i]);
 
                         if (res == VK_SUCCESS) {
-                                found = true;
-                                std::println("Fence Found");
+                                resource_index = i;
                                 break;
                         } else if (res != VK_NOT_READY) {
-                                std::println("Failed checking transfer fence status");
-                                exit(res);
+                                std::println("Fence in use should be marked but it is not! There is a bug.");
+                                exit(1);
                         }
                 }
 
-                if (!found) break;
+                // If all resources in use
+                if (resource_index == u32_max) break;
 
                 // ===== If Copy Dont need Staging ===== //
 
-                // NOTE: We can process all copy jobs at this point or check for jobs that do fit if current one doesnt
-                // but we dont. Jobs are started in order they are recieved.
+                if (transfer_jobs[job_index].type == TransferJobType::Read) {
+                        BufferRegion buffer_region = GetStagingBufferRegion(transfer_jobs[job_index].read_job.size);
 
-                if (transfer_jobs[first_pending].type == TransferJobType::Read) {
-                        BufferRegion buffer_region = GetStagingBufferRegion(transfer_jobs[first_pending].read_job.size);
+                        if (buffer_region.block_count == 0) continue;
 
-                        if (buffer_region.block_count == 0) break;
-                        std::println("Block Found");
+                        transfer_jobs[job_index].read_job.staging_buffer_region = buffer_region;
 
-                        transfer_jobs[first_pending].read_job.staging_buffer_region = buffer_region;
-                } else if (transfer_jobs[first_pending].type == TransferJobType::Write) {
-                        BufferRegion buffer_region = GetStagingBufferRegion(transfer_jobs[first_pending].write_job.size);
+                } else if (transfer_jobs[job_index].type == TransferJobType::Write) {
+                        BufferRegion buffer_region = GetStagingBufferRegion(transfer_jobs[job_index].write_job.size);
 
-                        if (buffer_region.block_count == 0) break;
-                        std::println("Block Found");
+                        if (buffer_region.block_count == 0) continue;
 
-
-                        transfer_jobs[first_pending].write_job.staging_buffer_region = buffer_region;
+                        transfer_jobs[job_index].write_job.staging_buffer_region = buffer_region;
                 }
 
-                // NOTE: MUST NOT USE FIRST PENDING AFTER THIS
-                TransferJobID job_id = PopNextPendingTransferJob();
-                TransferJob&  job    = transfer_jobs[job_id];
-
-                job.transfer_index = index;
+                TransferJob& job   = transfer_jobs[job_index];
+                job.transfer_index = resource_index;
 
                 // ===== Reset fence ===== //
 
                 res = vkResetFences(vulkan_device, 1, &fences[job.transfer_index]);
 
                 if (res != VK_SUCCESS) {
-                        std::println("Failed resetting transfer fence");
-                        exit(res);
+                        std::println("Failed resetting transfer fence: {}", i32(res));
+                        exit(1);
                 }
 
                 // ===== Get Command Buffer ===== //
 
                 VkCommandBuffer command_buffer = command_buffers[job.transfer_index];
+                res                            = vkResetCommandBuffer(command_buffer, 0);
 
                 // ===== Start Job ===== //
-
-                std::println("Job Type: {}", (u32)job.type);
 
                 switch (job.type) {
                         case TransferJobType::Copy:
@@ -303,7 +293,7 @@ void TransferEngine::Update() {
                 // ===== Set Vars ===== //
 
                 fence_in_use[job.transfer_index] = true;
-                transfer_index                   = job.transfer_index;
+                last_checked_resource_index++;
         }
 }
 
@@ -330,6 +320,8 @@ void CmdReleaseBufferOwnership(BufferOwnershipInfo& info) {
         };
 
         vkCmdPipelineBarrier2(info.command_buffer, &release_dependency_info);
+
+        info.buffer->owning_queue_family = u32_max;
 }
 
 void CmdAcquireBufferOwnership(BufferOwnershipInfo& info) {
@@ -351,6 +343,8 @@ void CmdAcquireBufferOwnership(BufferOwnershipInfo& info) {
         };
 
         vkCmdPipelineBarrier2(info.command_buffer, &acquire_dependency_info);
+
+        info.buffer->owning_queue_family = info.new_queue_family;
 }
 
 BufferRegion TransferEngine::GetStagingBufferRegion(u64 size) {
@@ -464,9 +458,8 @@ void TransferEngine::ReleaseStagingBufferRegion(BufferRegion buffer_region) {
         free_staging_buffer_region_count++;
 }
 
-// NOTE: Its rare we will want to read data back from buffers, usually we just want to transfer ownership to use it straight away
-// // or transfer to be able to write to it.
 void TransferEngine::GPUBufferRead(VkCommandBuffer command_buffer, const TransferJob& job) {
+        // std::println("GPUBufferRead Called");
         VkResult res{};
 
         // ===== Begin Command Buffer ===== //
@@ -494,16 +487,14 @@ void TransferEngine::GPUBufferRead(VkCommandBuffer command_buffer, const Transfe
         };
 
         bool acquired_buffer = false;
-
-        // If the buffer is already owned by the queue we dont need to acquire.
-        if (job.read_job.src->owning_queue_family == u32_max) {
+        if (job.read_job.src->owning_queue_family != transfer_queue_family) {
                 CmdAcquireBufferOwnership(acquire_ownership_info);
                 acquired_buffer = true;
         }
 
         // If we acquire we make sure the correct queue family has acquired
         // If the buffer was not released then we need to make sure the buffer was in the tranfer family already
-        assert(job.read_job.src->owning_queue_family == transfer_queue_family && "Make sure you release buffers from other queue families before transfer.");
+        // assert(job.read_job.src->owning_queue_family == transfer_queue_family && "Make sure you release buffers from other queue families before transfer.");
 
         // ===== Record Copy Commands ===== //
 
@@ -518,13 +509,13 @@ void TransferEngine::GPUBufferRead(VkCommandBuffer command_buffer, const Transfe
         // ===== Release Ownership ===== //
 
         // Swap new and old
-        acquire_ownership_info.new_queue_family = acquire_ownership_info.old_queue_family;
         acquire_ownership_info.old_queue_family = transfer_queue_family;
+        acquire_ownership_info.new_queue_family = job.read_job.dst_queue_family;
 
-        // If the queue family stays the same we dont need to release.
-        if (job.read_job.src_queue_family != transfer_queue_family) {
+        bool released_semaphore = false;
+        if (job.read_job.dst_queue_family != transfer_queue_family) {
                 CmdReleaseBufferOwnership(acquire_ownership_info);
-                std::println("Releasing the resource");
+                released_semaphore = true;
         }
 
         // ===== End Command Buffer ===== //
@@ -550,10 +541,15 @@ void TransferEngine::GPUBufferRead(VkCommandBuffer command_buffer, const Transfe
 
         VkSemaphoreSubmitInfo signal_semaphore_info{
                 .sType       = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
-                .semaphore   = job.read_job.src->transfer_semaphore,
+                .semaphore   = job.read_job.src->ownership_semaphore,
                 .stageMask   = VK_PIPELINE_STAGE_2_COPY_BIT,
                 .deviceIndex = 0, // Must be 0 if not using a device group.
         };
+
+        u32 signal_count = 0;
+        if (released_semaphore) {
+                signal_count++;
+        }
 
         VkCommandBufferSubmitInfo command_buffer_submit_info{
                 .sType         = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO,
@@ -567,7 +563,7 @@ void TransferEngine::GPUBufferRead(VkCommandBuffer command_buffer, const Transfe
                 .pWaitSemaphoreInfos      = wait_semaphore_infos.data(),
                 .commandBufferInfoCount   = 1,
                 .pCommandBufferInfos      = &command_buffer_submit_info,
-                .signalSemaphoreInfoCount = 1,
+                .signalSemaphoreInfoCount = signal_count,
                 .pSignalSemaphoreInfos    = &signal_semaphore_info,
         };
 
@@ -581,7 +577,7 @@ void TransferEngine::GPUBufferRead(VkCommandBuffer command_buffer, const Transfe
 
 // u64 for size and offset?
 void TransferEngine::GPUBufferWrite(VkCommandBuffer command_buffer, const TransferJob& job) {
-        std::println("GPUBufferWrite Called");
+        // std::println("GPUBufferWrite Called");
 
         VkResult res{};
 
@@ -599,7 +595,7 @@ void TransferEngine::GPUBufferWrite(VkCommandBuffer command_buffer, const Transf
         BufferOwnershipInfo acquire_ownership_info{
                 .command_buffer   = command_buffer,
                 .buffer           = job.write_job.dst,
-                .old_queue_family = job.write_job.dst_queue_family,
+                .old_queue_family = job.write_job.src_queue_family,
                 .new_queue_family = transfer_queue_family,
                 .stage_mask       = VK_PIPELINE_STAGE_2_COPY_BIT,
                 .access_mask      = VK_ACCESS_2_TRANSFER_WRITE_BIT,
@@ -607,7 +603,7 @@ void TransferEngine::GPUBufferWrite(VkCommandBuffer command_buffer, const Transf
 
         bool acquired_buffer = false;
 
-        if (job.write_job.dst->owning_queue_family == u32_max) {
+        if (job.write_job.dst->owning_queue_family != transfer_queue_family) {
                 CmdAcquireBufferOwnership(acquire_ownership_info);
                 acquired_buffer = true;
         }
@@ -630,12 +626,13 @@ void TransferEngine::GPUBufferWrite(VkCommandBuffer command_buffer, const Transf
         // ===== Release Ownership ===== //
 
         // Swap new and old
-        acquire_ownership_info.new_queue_family = acquire_ownership_info.old_queue_family;
         acquire_ownership_info.old_queue_family = transfer_queue_family;
+        acquire_ownership_info.new_queue_family = job.write_job.dst_queue_family;
 
+        bool released_buffer = false;
         if (job.write_job.dst_queue_family != transfer_queue_family) {
                 CmdReleaseBufferOwnership(acquire_ownership_info);
-                std::println("Releasing Ownership");
+                released_buffer = true;
         }
 
         // ===== End Command Buffer ===== //
@@ -660,10 +657,15 @@ void TransferEngine::GPUBufferWrite(VkCommandBuffer command_buffer, const Transf
 
         VkSemaphoreSubmitInfo signal_semaphore_info{
                 .sType       = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
-                .semaphore   = job.write_job.dst->transfer_semaphore,
+                .semaphore   = job.write_job.dst->ownership_semaphore,
                 .stageMask   = VK_PIPELINE_STAGE_2_COPY_BIT,
                 .deviceIndex = 0, // Must be 0 if not using a device group.
         };
+
+        u32 signal_count = 0;
+        if (released_buffer) {
+                signal_count++;
+        }
 
         VkCommandBufferSubmitInfo command_buffer_submit_info{
                 .sType         = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO,
@@ -677,7 +679,7 @@ void TransferEngine::GPUBufferWrite(VkCommandBuffer command_buffer, const Transf
                 .pWaitSemaphoreInfos      = wait_semaphore_infos.data(),
                 .commandBufferInfoCount   = 1,
                 .pCommandBufferInfos      = &command_buffer_submit_info,
-                .signalSemaphoreInfoCount = 1,
+                .signalSemaphoreInfoCount = signal_count,
                 .pSignalSemaphoreInfos    = &signal_semaphore_info,
         };
 
@@ -689,52 +691,41 @@ void TransferEngine::GPUBufferWrite(VkCommandBuffer command_buffer, const Transf
         }
 }
 
-TransferJobID TransferEngine::PopNextFreeTransferJob() {
-        if (first_free == transfer_queue_end) {
-                std::println("No space in transfer queue. Increase size, or Check completed transfers.");
-                exit(1);
-        }
-        assert(first_free < transfer_queue_end);
+TransferJobID TransferEngine::GetJob() {
+        if (next_free_job >= transfer_jobs.size()) {
+                transfer_jobs.push_back({});
 
-        TransferJob& job = transfer_jobs[first_free];
+                TransferJobID id = next_free_job;
+                next_free_job++;
 
-        first_free = job.next;
-        job.next   = transfer_queue_end;
+                transfer_jobs[id].id = id;
 
-        return job.id;
-}
-
-TransferJobID TransferEngine::PopNextPendingTransferJob() {
-        if (first_pending == transfer_queue_end) return transfer_queue_end;
-
-        TransferJob& job = transfer_jobs[first_pending];
-
-        if (first_pending == last_pending) last_pending = transfer_queue_end;
-
-        first_pending = job.next;
-        job.next      = transfer_queue_end;
-
-        return job.id;
-}
-
-void TransferEngine::AddPendingJob(TransferJobID id) {
-        transfer_jobs[id].next = transfer_queue_end;
-
-        if (last_pending == transfer_queue_end) {
-                last_pending  = id;
-                first_pending = id;
-                return;
+                return id;
         }
 
-        assert(transfer_jobs[last_pending].next == transfer_queue_end);
+        TransferJob& job = transfer_jobs[next_free_job];
 
-        transfer_jobs[last_pending].next = id;
-        last_pending                     = id;
+        next_free_job = job.next;
+        job           = { .id = job.id };
+
+        return job.id;
 }
 
 void TransferEngine::FreeJob(TransferJobID id) {
-        transfer_jobs[id].next = first_free;
-        first_free             = id;
+        TransferJobID free_job = next_free_job;
+
+        if (id < free_job) {
+                transfer_jobs[id].next = free_job;
+                next_free_job          = id;
+                return;
+        }
+
+        while (id > transfer_jobs[free_job].next) {
+                free_job = transfer_jobs[free_job].next;
+        }
+
+        transfer_jobs[id].next       = transfer_jobs[free_job].next;
+        transfer_jobs[free_job].next = id;
 }
 
 TransferJobID TransferEngine::QueueGPUBufferRead(GPUBufferReadInfo read_job) {
@@ -744,15 +735,13 @@ TransferJobID TransferEngine::QueueGPUBufferRead(GPUBufferReadInfo read_job) {
                 exit(1);
         }
 
-        u32          job_index = PopNextFreeTransferJob();
-        TransferJob& job       = transfer_jobs[job_index];
+        TransferJobID job_index = GetJob();
+        TransferJob&  job       = transfer_jobs[job_index];
 
         job.type     = TransferJobType::Read;
         job.read_job = read_job;
 
         job.transfer_index = u32_max;
-
-        AddPendingJob(job.id);
 
         return job.id;
 }
@@ -764,7 +753,7 @@ TransferJobID TransferEngine::QueueGPUBufferWrite(GPUBufferWriteInfo write_job) 
                 exit(1);
         }
 
-        u32          job_index = PopNextFreeTransferJob();
+        u32          job_index = GetJob();
         TransferJob& job       = transfer_jobs[job_index];
 
         job.type      = TransferJobType::Write;
@@ -772,13 +761,10 @@ TransferJobID TransferEngine::QueueGPUBufferWrite(GPUBufferWriteInfo write_job) 
 
         job.transfer_index = u32_max;
 
-        AddPendingJob(job.id);
-
         return job.id;
 }
 
 bool TransferEngine::Check(TransferJobID id) {
-        // std::println("Checking ID: {}", id);
 
         TransferJob& job = transfer_jobs[id];
 
@@ -786,17 +772,13 @@ bool TransferEngine::Check(TransferJobID id) {
 
         VkFence fence = fences[job.transfer_index];
 
+        // std::println("Checking ID: {}", id);
         // Ahh, we need to see if we actually queued the job yet.
         VkResult res = vkGetFenceStatus(vulkan_device, fence);
 
         if (res == VK_SUCCESS) {
-                // Job Finished
                 fence_in_use[job.transfer_index] = false;
 
-                // Reset Fence - We already do before submitting...
-                // res = vkResetFences(vulkan_device, 1, &fences[job.transfer_index]);
-
-                // If Read Job need to copy to dst here!
                 if (job.type == TransferJobType::Read) {
                         u8* staging_ptr = (u8*)staging_buffer.allocation_info.pMappedData;
                         memcpy(job.read_job.dst, &staging_ptr[job.read_job.staging_buffer_region.GetOffset()], job.read_job.size);

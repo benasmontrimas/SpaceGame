@@ -30,6 +30,8 @@ enum class MaterialType : u32 {
         Basic  = 2,
         Planet = 3,
         Text   = 4,
+        UI     = 5,
+        UIImage = 6,
 
         Count,
 };
@@ -51,6 +53,12 @@ struct MaterialText {
         TextureID texture_start;
 };
 
+struct MaterialUI {};
+
+struct MaterialUIImage {
+        TextureID texture_id;
+};
+
 struct Material {
         MaterialType type;
 
@@ -59,6 +67,8 @@ struct Material {
                 MaterialSkyMap skymap;
                 MaterialPlanet planet;
                 MaterialText   text;
+                MaterialUI     ui;
+                MaterialUIImage ui_image;
         };
 
         void* Data() const {
@@ -85,7 +95,12 @@ struct ModelDrawData {
 
 struct InstanceDrawData {
         Mat4 model_matrix;
+        Vec4 colour0;
+        Vec4 colour1;
         u32  user_value;
+        u32  user_value1;
+        u32  user_value2;
+        u32  user_value3;
 };
 
 struct VertexDrawData {
@@ -94,27 +109,52 @@ struct VertexDrawData {
         Vec2 uv;
 };
 
+// ===== Triangle BVH ===== //
+
+struct TriangleBVHNode {
+        AABB bounds;
+
+        union {
+                u32 child_index;
+                u32 index_count;
+        };
+
+        u32 index_offset;
+};
+
+struct TriangleBVH {
+        static constexpr float triangle_intersect_cost = 1.5;
+        static constexpr float bounds_intersect_cost   = 1.0;
+
+        static constexpr u32 bin_count_per_dimension = 3;
+        static constexpr u32 max_indices_in_node     = 36;
+        static constexpr u32 root_node               = 1;
+
+        std::vector<TriangleBVHNode> nodes;
+
+        void Init(VertexDrawData* vertices, u32 vertex_count, u32* indices, u32 index_count);
+        void Traverse();
+
+        // ===== For BVH Creation ===== //
+
+        float CalculateCost(float parent_area, u32 index_count, const TriangleBVHNode& left, const TriangleBVHNode& right);
+        bool  GetBestSplit(VertexDrawData* vertices, u32* indices, u32 index_count, u32 node_index, Vec3* split_position);
+        void  Split(VertexDrawData* vertices, u32* indices, u32 index_count, u32 index_offset, u32 node_index);
+};
+
 // ===== MODELS ===== //
-
-// Represents a object transform in 3D.
-struct Transform {
-        Vec3 position{};
-        Quat rotation{};
-        Vec3 scale{ 1, 1, 1 };
-};
-
-// Represents a object transform in 2D.
-struct Transform2D {
-        Vec2  position{};
-        float rotation{};
-        Vec2  scale{ 1, 1 };
-};
 
 // A vertex and index buffer to represent a single mesh
 struct Mesh {
         GPUBuffer buffer;
         u64       vertices_size;
         u64       index_count;
+
+        u32* indices;
+        VertexDrawData* vertices;
+        TriangleBVH bvh;
+
+        float Traverse(u32 node_index, Ray ray, float ray_length);
 };
 
 // A single instance of a model.
@@ -122,7 +162,12 @@ struct ModelInstance {
         ModelID model_id;
 
         Transform transform;
+        Vec4      colour0;
+        Vec4      colour1;
         u32       user_value;
+        u32       user_value1;
+        u32       user_value2;
+        u32       user_value3;
 };
 
 // Represents a collection of Meshes.
@@ -134,6 +179,9 @@ struct Model {
         void LoadFromOBJ(GameContext* game_context, const std::string& file_name, u32 _max_instance_count);
 
         void Destroy(GameContext* game_context);
+
+        void Acquire(GameContext* game_context, VkCommandBuffer command_buffer, std::vector<VkSemaphore>& wait_semaphores);
+        void Draw(GameContext* game_context, VkCommandBuffer command_buffer, VkPipelineLayout pipeline_layout, u32 frame_index);
 
         // ===== Members ===== //
 
@@ -151,7 +199,8 @@ struct Model {
 
         u32 max_instance_count;
 
-        void Draw(VkCommandBuffer command_buffer, VkPipelineLayout pipeline_layout, u32 frame_index);
+        bool is_transparent {false};
+
 };
 
 union ModelSlot {
@@ -170,15 +219,17 @@ struct ModelSystem {
 
         ModelID GetNewModelID();
 
-        ModelID LoadModel(const std::string& file_path, u32 max_instance_count);
-        ModelID CreateModel(VertexDrawData* vertices, u64 vertex_count, u32* indices, u64 index_count, u32 _max_instance_count);
-        ModelID CreateModel(u64 vertex_count, u64 index_count, u32 _max_instance_count);
+        ModelID LoadModel(const std::string& file_path, u32 max_instance_count, bool is_transparent = false);
+        ModelID CreateModel(VertexDrawData* vertices, u64 vertex_count, u32* indices, u64 index_count, u32 _max_instance_count, bool is_transparent = false);
+        ModelID CreateModel(u64 vertex_count, u64 index_count, u32 _max_instance_count, bool is_transparent = false);
         ModelID AddModel(const Model& model);
 
         void          DestroyModel(ModelID id);
         ModelInstance CreateModelInstance(ModelID id) const;
 
         void Draw(ModelInstance instance);
+
+        void Acquire(VkCommandBuffer command_buffer, std::vector<VkSemaphore>& wait_semaphores);
         void Draw(VkCommandBuffer command_buffer, u32 frame_index);
 
         Model& operator[](ModelID id) {
@@ -203,48 +254,4 @@ struct Texture {
         VkImageView   image_view;
         VkSampler     sampler;
         VmaAllocation allocation;
-};
-
-// ========================== //
-// ===== TEXT RENDERING ===== //
-// ========================== //
-
-struct RenderedLetter {
-        char        letter;
-        Transform2D transform;
-        Vec4        colour;
-};
-
-struct TextSystem {
-        static constexpr u64 max_letter_count  = 100'000;
-        static constexpr u64 frame_buffer_size = max_letter_count * sizeof(InstanceDrawData);
-
-        GameContext* game_context;
-        ModelID      model_id;
-
-        Texture title_font_atlas;
-        Texture default_font_atlas;
-
-        FT_Library ft_library;
-
-        FT_Face title_font;
-        FT_Face default_font;
-
-        void Init(GameContext* _game_context);
-        void Shutdown();
-        void AddText(ModelInstance* model_instance, u32 text_letter_count);
-};
-
-struct RenderedText {
-        std::string                 text{};
-        Transform                   transform;
-        std::vector<RenderedLetter> letter_data;
-        Vec4                        default_colour{ 1, 1, 1, 1 };
-
-        void SetText(TextSystem* text_system, const std::string& new_text);
-        void SetSubText(TextSystem* text_system, const std::string& new_sub_text, u32 start);
-        void SetColour(TextSystem* text_system, Vec4 colour);
-        void SetColour(TextSystem* text_system, u32 letter_index, Vec4 colour); // NOTE: Count letter index from text, as we dont have spaces and new lines.
-
-        void Draw(TextSystem* text_system);
 };

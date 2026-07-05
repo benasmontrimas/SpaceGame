@@ -130,7 +130,8 @@ bool InputSystem::Update() {
                 KeyState state  = KeyState::None;
                 Action&  action = actions[i];
 
-                action.value = {};
+                action.last_value = action.value;
+                action.value      = {};
 
                 for (u32 key_i = 0; key_i < action.inputs.size(); key_i++) {
                         const InputAction& input_action = action.inputs[key_i];

@@ -7,10 +7,12 @@ import Base;
 enum MaterialType {
         None = 0,
 
-        SkyMap = 1,
-        Basic  = 2,
-        Planet = 3,
-        Text   = 4,
+        SkyMap  = 1,
+        Basic   = 2,
+        Planet  = 3,
+        Text    = 4,
+        UI      = 5,
+        UIImage = 6,
 
         Count,
 };
@@ -40,7 +42,12 @@ struct VertexData {
         [[vk::location(2)]] float2 uv;
 
         [[vk::location(3)]] float4x4 model_matrix;
-        [[vk::location(7)]] u32      user_value;
+        [[vk::location(7)]] float4   colour0;
+        [[vk::location(8)]] float4   colour1;
+        [[vk::location(9)]] u32      user_value;
+        [[vk::location(10)]] u32     user_value1;
+        [[vk::location(11)]] u32     user_value2;
+        [[vk::location(12)]] u32     user_value3;
 };
 
 // ParameterBlock<VertexData> vertex_data;
@@ -51,12 +58,12 @@ struct VSOutput {
         float3 normal;
         float3 tangent;
         float2 uv;
-        float2 uv1;
-        float2 uv2;
-        float3 weights;
 
         MaterialData material_data;
         MaterialType material_id;
+
+        float4 colour0;
+        float4 colour1;
 
         float3 world_position;
 };
@@ -105,18 +112,31 @@ ModelData model_data;
                 case MaterialType::Text:
                         float2 texture_dims   = float2(512, 512);
                         float2 cell_dimension = float2(102.0, 85.0) / texture_dims;
-                        float  glyph_size     = 86.8125;
-                        float2 cell_origin    = float2(0.0552134629, 0.247660187) / texture_dims;
-                        u32    columns        = 5;
+                        float2 cell_origin    = float2(0.10625, 0.28125) / texture_dims;
+                        if (input.user_value1 == 98) cell_origin = float2(0.31875, 0.18125) / texture_dims;
+                        u32 columns = 5;
 
                         u32 col = input.user_value % columns;
                         u32 row = input.user_value / columns;
 
-                        float2 uv_start = cell_dimension * float2(col, row) + cell_origin + float2(0.003, 0.003);
-                        output.uv       = uv_start + (input.uv * cell_dimension) - float2(0.008, 0.002);
+                        float2 uv_start = cell_dimension * float2(col, row) + cell_origin;
+                        output.uv       = uv_start + (input.uv * (cell_dimension - cell_origin));
 
                         output.position                   = mul(input.model_matrix, float4(position, 1.0));
-                        output.material_data.texture_id_1 = model_data.material_data.texture_id_1;
+                        output.material_data.texture_id_1 = input.user_value1;
+                        break;
+                case MaterialType::UI:
+                        output.colour0 = input.colour0;
+                        output.colour1 = input.colour1;
+
+                        output.position = mul(input.model_matrix, float4(position, 1.0));
+
+                        break;
+                case MaterialType::UIImage:
+                        output.colour0 = input.colour0;
+                        output.colour1 = input.colour1;
+
+                        output.position = mul(input.model_matrix, float4(position, 1.0));
                         break;
         }
 
@@ -146,7 +166,7 @@ float4 BasicMaterial(VSOutput input) {
 float4 PlanetMaterial(VSOutput input) {
         // ===== Triplanar Mapping ===== //
 
-        float  scale           = 1.0f / 50.0f;
+        float  scale           = 1.0f / 500.0f;
         float3 scaled_position = input.world_position * scale;
 
         float2 uv0 = scaled_position.zy;
@@ -183,7 +203,7 @@ float4 PlanetMaterial(VSOutput input) {
 
         float3 normal = normalize(normal_x.zyx * weights.x + normal_y.xzy * weights.y + normal_z.xyz * weights.z);
 
-        // normal = input.normal;
+        // return float4(input.normal, 1.0f);
 
         // ===== Light ===== //
 
@@ -193,30 +213,77 @@ float4 PlanetMaterial(VSOutput input) {
                 { 1, 0.84, 0.66, 1.0 },
         };
 
-        return albedo * light.Evaluate(input.world_position, normal);
-        // return float4(1.0f, 0.0f, 0.0f, 1.0f);
+        float4 colour = albedo * light.Evaluate(input.world_position, normal);
+        colour.a      = 1.0f;
+        return colour;
 }
 
 float4 Text(VSOutput input) {
-        float2 cell_dimension = { 102.0, 85.0 };
-        float  glyph_size     = 86.8125;
-        float2 cell_origin    = { 0.0552134629, 0.247660187 };
-        u32    columns        = 5;
+        float glyph_size = 80.0;
 
         float3 signed_distance_rgb = textures[input.material_data.texture_id_1].Sample(input.uv).rgb;
         float  signed_distance =
                 max(min(signed_distance_rgb.r, signed_distance_rgb.g), min(max(signed_distance_rgb.r, signed_distance_rgb.g), signed_distance_rgb.b));
 
         // float screen_distance = ScreenPixelRange(input) * (signed_distance - 0.5);
-        float pixel_range     = 512.0 / glyph_size * 2;
+        float pixel_range     = 128.0 / glyph_size * 2;
         float screen_distance = pixel_range * (signed_distance - 0.5);
 
         float opacity = clamp(screen_distance + 0.5, 0.0, 1.0);
-        if (opacity < 0.1) discard;
+        if (opacity < 1.0) discard;
 
-        if (signed_distance < 0.8) return float4(1, 1, 1, 1);
-        return float4(0, 0, 0, 1);
+        float hor_d = ddx(input.uv.x) * 10;
+
+        float border = step(signed_distance, 1 - hor_d);
+        border       = 1.0;
+
+        return input.colour0;
         // return lerp(float4(0, 0, 0, 1), float4(1, 1, 1, 1), signed_distance);
+}
+
+float RoundedBox(float v) {
+        return pow(abs(v) * 2, 20);
+}
+
+float4 UI(VSOutput input) {
+        float a = RoundedBox(input.uv.x - 0.5) + RoundedBox(input.uv.y - 0.5);
+
+        float hor_d = ddx(input.uv.x) * 3;
+        float ver_d = ddy(input.uv.y) * 3;
+        float r     = 0.1;
+
+        // NOTE: DO THIS FOR TEXT BORDER TOO
+        float  aspect_ratio = ver_d / hor_d;
+        float2 ar           = float2(aspect_ratio, 1.0);
+        // printf("ar: %f\n", aspect_ratio);
+
+        float2 closest_point_to_rect    = clamp(input.uv, float2(r), float2(1) - float2(r));
+        float  distance_to_rounded_rect = distance(closest_point_to_rect * ar, input.uv * ar) - 0.1;
+
+        float inside = step(distance_to_rounded_rect, 0.0);
+        if (inside == 0) discard;
+
+        float border_x = step(distance_to_rounded_rect, -hor_d);
+        float border_y = step(distance_to_rounded_rect, -ver_d);
+
+        float border = min(border_x, border_y);
+
+        // a = input.uv.x
+
+        // if (a > 1.0) discard;
+        // float border = step(a, 0.5);
+
+        return border * input.colour0 + (1.0 - border) * input.colour1;
+}
+
+float4 UIImage(VSOutput input) {
+        float4 image = textures[input.material_data.texture_id_1].Sample(input.uv);
+
+        // if (image.a < 1.0) discard;
+
+        image.a = input.colour0.a;
+
+        return image;
 }
 
 [[shader("fragment")]] [[require(SPV_KHR_non_semantic_info)]] float4 main(VSOutput input) {
@@ -234,6 +301,10 @@ float4 Text(VSOutput input) {
                         return PlanetMaterial(input);
                 case MaterialType::Text:
                         return Text(input);
+                case MaterialType::UI:
+                        return UI(input);
+                case MaterialType::UIImage:
+                        return UIImage(input);
 
                 default:
                         return { 1, 0, 1, 1 };

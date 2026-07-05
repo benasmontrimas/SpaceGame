@@ -24,6 +24,7 @@ project "SpaceGame"
                 "External",
                 "External/KTX",
                 "External/FreeType",
+                "External/fmod/inc/",
                 "$(VULKAN_SDK)/include",
         }
 
@@ -32,7 +33,8 @@ project "SpaceGame"
         }
 
         runpathdirs {
-                "External/slang/lib"
+                "External/slang/lib",
+                "External/fmod/lib/x86_64/",
         }
 
         -- Settings --
@@ -69,7 +71,8 @@ project "SpaceGame"
                         "External/KTX/lib/ktx",
                         "volk",
                         "External/slang/lib/slang",
-                        "freetype"
+                        "freetype",
+                        "External/fmod/lib/x86_64/fmod"
                 }
 
         filter "configurations:Debug"
