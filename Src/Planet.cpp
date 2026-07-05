@@ -1212,7 +1212,7 @@ float Planet::CheckIntersection(Ray ray, float ray_length) {
         for (u32 child_index = 0; child_index < 8; child_index++) {
                 child_bounds.center = tree.root.center + (PARENT_CENTER_OFFSET[child_index] * child_bounds.radius);
                 float distance      = tree.RayIntersect(child_index, child_bounds, ray, ray_length);
-                closest_distance        = std::min(closest_distance, distance);
+                closest_distance    = std::min(closest_distance, distance);
         }
 
         return closest_distance;
@@ -1228,19 +1228,14 @@ float PlanetChunkTree::RayIntersect(NodeID node_index, AABB bounds, Ray ray, flo
         if (nodes[node_index].HasChunk()) {
                 PlanetChunk& chunk = planet->chunks[nodes[node_index].chunk_index];
 
-                // If we go into this we dont need to check children.
-                // if (chunk.IsRenderReady()) {
-                        // Traverse Mesh BVH
 
-                        ModelID chunk_model_id = planet->chunks[nodes[node_index].chunk_index].model_id;
+                ModelID chunk_model_id = planet->chunks[nodes[node_index].chunk_index].model_id;
 
-                        if (chunk_model_id != u32_max and planet->game_context->model_system[chunk_model_id].mesh_count > 0){
-                                Mesh&   chunk_mesh     = planet->game_context->model_system[chunk_model_id].meshes[0];
+                if (chunk_model_id != u32_max and planet->game_context->model_system[chunk_model_id].mesh_count > 0) {
+                        Mesh& chunk_mesh = planet->game_context->model_system[chunk_model_id].meshes[0];
 
-                                if (chunk_mesh.bvh.nodes.size() > 0) t = chunk_mesh.Traverse(1, ray, ray_length);
-                        }
-                // }
-
+                        if (chunk_mesh.bvh.nodes.size() > 0) t = chunk_mesh.Traverse(1, ray, ray_length);
+                }
         }
 
         if (nodes[node_index].HasChildren()) {
@@ -1254,7 +1249,7 @@ float PlanetChunkTree::RayIntersect(NodeID node_index, AABB bounds, Ray ray, flo
 
                         child_bounds.center = bounds.center + (PARENT_CENTER_OFFSET[child_offset] * child_bounds.radius);
                         float distance      = RayIntersect(child_index, child_bounds, ray, ray_length);
-                        t        = std::min(t, distance);
+                        t                   = std::min(t, distance);
                 }
         }
 

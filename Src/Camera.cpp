@@ -1,8 +1,12 @@
 #include "Camera.h"
 #include "Game.h"
 
-void Camera::Update(GameContext& game_context) {
-        aspect_ratio = (float)game_context.window.width / (float)game_context.window.height;
+void Camera::Init(GameContext* _game_context) {
+        game_context = _game_context;
+}
+
+void Camera::Update() {
+        aspect_ratio = (float)game_context->window.width / (float)game_context->window.height;
 }
 
 // TODO: Move this to the camera class and use the rotation vector form GameObject as we will want to allow for rotation along y aswell.

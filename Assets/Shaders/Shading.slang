@@ -110,17 +110,18 @@ ModelData model_data;
 
         switch (model_data.material_id) {
                 case MaterialType::Text:
-                        float2 texture_dims   = float2(512, 512);
+                        float2 texture_dims   = float2(612, 510);
                         float2 cell_dimension = float2(102.0, 85.0) / texture_dims;
                         float2 cell_origin    = float2(0.10625, 0.28125) / texture_dims;
                         if (input.user_value1 == 98) cell_origin = float2(0.31875, 0.18125) / texture_dims;
-                        u32 columns = 5;
+                        u32 columns = 6;
 
+                        // printf("Value: %u\n", input.user_value);
                         u32 col = input.user_value % columns;
                         u32 row = input.user_value / columns;
 
-                        float2 uv_start = cell_dimension * float2(col, row) + cell_origin;
-                        output.uv       = uv_start + (input.uv * (cell_dimension - cell_origin));
+                        float2 uv_start = cell_dimension * float2(col, row) + cell_origin + float2(0.001, 0.001);
+                        output.uv       = uv_start + (input.uv * (cell_dimension - cell_origin)) * 0.99;
 
                         output.position                   = mul(input.model_matrix, float4(position, 1.0));
                         output.material_data.texture_id_1 = input.user_value1;
@@ -149,24 +150,39 @@ ModelData model_data;
 
 
 float4 SkyMapMaterial(VSOutput input) {
-        float theta = asin(input.normal.z);
-        float phi   = atan2(input.normal.y, input.normal.x);
+        float3 normal = normalize(input.world_position.xyz);
+
+        float theta = asin(normal.z);
+        float phi   = atan2(normal.y, normal.x);
 
         float pi = float.getPi();
         float u  = (phi / (2 * pi)) + 0.5;
         float v  = (theta / (pi)) + 0.5;
 
-        return textures[0].Sample(float2(u, v));
+        float4 colour = textures[0].Sample(float2(u, v));
+        return colour;
 }
 
 float4 BasicMaterial(VSOutput input) {
-        return float4(0.3f, 1.0f, 0.8f, 1.0f);
+        float4 albedo = textures[input.material_data.texture_id_1].Sample(input.uv);
+
+        PointLight light = {
+                { 0, 20000, 100 },
+                100000,
+                { 1, 0.84, 0.66, 1.0 },
+        };
+
+        light.colour.xyz = light.colour.xyz / 4.0f;
+
+        float4 colour = albedo * light.Evaluate(input.world_position, input.normal);
+        colour.a      = 1.0f;
+        return colour;
 }
 
 float4 PlanetMaterial(VSOutput input) {
         // ===== Triplanar Mapping ===== //
 
-        float  scale           = 1.0f / 500.0f;
+        float  scale           = 1.0f / 100.0f;
         float3 scaled_position = input.world_position * scale;
 
         float2 uv0 = scaled_position.zy;
@@ -213,6 +229,8 @@ float4 PlanetMaterial(VSOutput input) {
                 { 1, 0.84, 0.66, 1.0 },
         };
 
+        light.colour.xyz = light.colour.xyz / 4.0f;
+
         float4 colour = albedo * light.Evaluate(input.world_position, normal);
         colour.a      = 1.0f;
         return colour;
@@ -230,14 +248,18 @@ float4 Text(VSOutput input) {
         float screen_distance = pixel_range * (signed_distance - 0.5);
 
         float opacity = clamp(screen_distance + 0.5, 0.0, 1.0);
-        if (opacity < 1.0) discard;
 
-        float hor_d = ddx(input.uv.x) * 10;
+        if (opacity < 0.1) discard;
+
+        float hor_d = ddx(input.uv.x) * 100;
 
         float border = step(signed_distance, 1 - hor_d);
         border       = 1.0;
 
-        return input.colour0;
+        float4 colour = input.colour0;
+        colour.xyz *= opacity;
+
+        return colour;
         // return lerp(float4(0, 0, 0, 1), float4(1, 1, 1, 1), signed_distance);
 }
 

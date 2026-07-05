@@ -16,6 +16,7 @@ struct UISystem {
         static constexpr u64 frame_buffer_size = max_letter_count * sizeof(InstanceDrawData);
 
         GameContext* game_context;
+        ModelID      transparent_letter_model_id;
         ModelID      letter_model_id;
         ModelID      ui_model_id;
         ModelID      image_model_id;
@@ -63,5 +64,5 @@ struct RenderedText {
         void SetColour(UISystem* ui_system, Vec4 colour);
         void SetColour(UISystem* ui_system, u32 letter_index, Vec4 colour); // NOTE: Count letter index from text, as we dont have spaces and new lines.
 
-        void Draw(UISystem* ui_system);
+        void Draw(UISystem* ui_system, bool transparent = false);
 };

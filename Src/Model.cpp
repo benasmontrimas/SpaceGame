@@ -601,8 +601,11 @@ ModelInstance ModelSystem::CreateModelInstance(ModelID id) const {
 void ModelSystem::Draw(ModelInstance instance) {
         Model& model = models[instance.model_id].model;
 
-        Mat4 model_matrix = glm::translate(Mat4(1.0f), instance.transform.position);
-        model_matrix      = glm::scale(model_matrix, instance.transform.scale);
+        Mat4 translate_matrix = glm::translate(Mat4(1.0f), instance.transform.position);
+        Mat4 rotate_matrix    = glm::mat4_cast(instance.transform.rotation);
+        Mat4 scale_matrix     = glm::scale(Mat4(1.0f), instance.transform.scale);
+
+        Mat4 model_matrix = translate_matrix * rotate_matrix * scale_matrix;
 
         model.instance_draw_data[model.instance_count] = { model_matrix,         instance.colour0,     instance.colour1,    instance.user_value,
                                                            instance.user_value1, instance.user_value2, instance.user_value3 };

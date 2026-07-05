@@ -831,7 +831,7 @@ void Pass4(uint3 dispatch_id : SV_DispatchThreadID) {
                                 };
                                 // info.vertices[current_vertex_offset].position = float3(1);
 
-                                // Store
+                                // Initialise normals to zero.
                                 info.normals[vertex_ind].normals[0] = { 0 };
                                 info.normals[vertex_ind].normals[1] = { 0 };
                                 info.normals[vertex_ind].normals[2] = { 0 };
@@ -1046,15 +1046,15 @@ Pass5(uint3 dispatch_id : SV_DispatchThreadID, uint group_index : SV_GroupIndex)
                         // if (info.normals[i0].normals[normal_index0].x != 0 || info.normals[i0].normals[normal_index0].y != 0 ||
                         // info.normals[i0].normals[normal_index0].z != 0) printf("Normal: %f %f %f\n", info.normals[i0].normals[normal_index0].x,
                         // info.normals[i0].normals[normal_index0].y, info.normals[i0].normals[normal_index0].z);
-                        info.normals[i0].normals[normal_index0].xyz = normal;
+                        info.normals[i0].normals[normal_index0].xyz += normal;
 
                         u32 normal_index1 = edge_id1 >> 1;
                         if (normal_index1 > 3) normal_index1 = edge_id1 - 8;
-                        info.normals[i1].normals[normal_index1].xyz = normal;
+                        info.normals[i1].normals[normal_index1].xyz += normal;
 
                         u32 normal_index2 = edge_id2 >> 1;
                         if (normal_index2 > 3) normal_index2 = edge_id2 - 8;
-                        info.normals[i2].normals[normal_index2].xyz = normal;
+                        info.normals[i2].normals[normal_index2].xyz += normal;
 
                         start_offset += 3;
                 }

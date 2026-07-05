@@ -15,7 +15,7 @@
 // ===== Constants ===== //
 // ===================== //
 
-constexpr u32 MINIMUM_CHUNK_DIMS = 8;
+constexpr u32 MINIMUM_CHUNK_DIMS = 16;
 constexpr u32 PLANET_MAX_RADIUS  = 50'000;
 
 
@@ -44,7 +44,7 @@ constexpr float CHUNK_LOD_DISTANCES[CHUNK_LOD_DISTANCE_COUNT] = {
         // 1000, 1000, 1000, 1000, 1000, 1000,
         2,     5,     10,    50,   100, 400,
         1'000, 2'000, 3'000, 5'000
-        // 1, 1, 100, 1000, 10000, 100000
+        // 1, 1, 1, 100, 100, 100, 100, 1000, 1000, 1000
 };
 
 

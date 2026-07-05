@@ -35,8 +35,11 @@ struct PlayerController {
 };
 
 struct Player {
-        void Init(GameContext* game_context);
+        void Init(GameContext* _game_context);
+        void Start(Planet* planet);
         void Update(float delta_time);
+
+        GameContext* game_context;
 
         Camera           camera;
         Transform        transform;

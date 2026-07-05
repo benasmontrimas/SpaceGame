@@ -154,14 +154,16 @@ void UISystem::CreateLetterModel() {
         VertexDrawData vertices[vertex_count] = { v0, v1, v2, v3 };
         u32            indices[index_count]   = { 0, 2, 1, 0, 3, 2 };
 
-        letter_model_id = game_context->model_system.CreateModel(&vertices[0], vertex_count, &indices[0], index_count, max_letter_count, true);
+        transparent_letter_model_id = game_context->model_system.CreateModel(&vertices[0], vertex_count, &indices[0], index_count, max_letter_count, true);
+        letter_model_id             = game_context->model_system.CreateModel(&vertices[0], vertex_count, &indices[0], index_count, max_letter_count);
 
         Material text_material{
                 .type = MaterialType::Text,
                 .text = { .texture_start = (99) },
         };
 
-        game_context->model_system[letter_model_id].material = text_material;
+        game_context->model_system[transparent_letter_model_id].material = text_material;
+        game_context->model_system[letter_model_id].material             = text_material;
 }
 
 // ===== TEXT RENDERING ===== //
@@ -181,9 +183,9 @@ void UISystem::Init(GameContext* _game_context) {
 
         game_context->AddTexture(default_font_atlas, 98);
 
-        CreateLetterModel();
         CreateUIBoxModel();
         CreateUIImageModel();
+        CreateLetterModel();
 
         // ===== Init Free Type ===== //
 
@@ -193,8 +195,17 @@ void UISystem::Init(GameContext* _game_context) {
                 exit(1);
         }
 
-        FT_New_Face(ft_library, "Assets/Fonts/Aboreto_Regular.2.ttf", 0, &title_font);
-        FT_New_Face(ft_library, "Assets/Fonts/AdwaitaSans-Regular.ttf", 0, &default_font);
+        error_code = FT_New_Face(ft_library, "Assets/Fonts/Aboreto_Regular.2.ttf", 0, &title_font);
+        if (error_code != 0) {
+                std::println("Failed loading font: {}", error_code);
+                exit(1);
+        }
+
+        error_code = FT_New_Face(ft_library, "Assets/Fonts/AdwaitaMono-Bold.ttf", 0, &default_font);
+        if (error_code != 0) {
+                std::println("Failed loading font: {}", error_code);
+                exit(1);
+        }
 }
 
 void UISystem::Shutdown() {
@@ -265,13 +276,13 @@ void RenderedText::SetText(UISystem* ui_system, const std::string& new_text) {
 
                 if (letter >= 'a' and letter <= 'z') letter += 'A' - 'a';
 
-                if (letter >= 'A' and letter <= 'Z' or letter == ' ') {
+                if ((letter >= 'A' and letter <= 'Z') or letter == ' ' or (letter >= '0' and letter <= '9')) {
                         FT_Load_Char(font, letter, FT_LOAD_DEFAULT);
                         FT_Glyph_Metrics glyph_metrics = font->glyph->metrics;
 
                         Transform2D letter_transform{};
 
-                        width = x_offset;
+                        // width = x_offset;
 
                         if (i > 0) {
                                 FT_Vector kerning;
@@ -283,12 +294,15 @@ void RenderedText::SetText(UISystem* ui_system, const std::string& new_text) {
 
                         letter_transform.position = { x_offset, y_offset + (glyph_metrics.horiBearingY >> 6) };
                         x_offset += (glyph_metrics.horiAdvance >> 6);
-                        width = std::max(width, x_offset + text_size);
+
+                        width = std::max(width, x_offset);
 
                         letter_transform.scale = {
                                 text_size,
                                 text_size,
                         };
+
+                        if (letter == ' ') continue;
 
                         letter_data.emplace_back(letter, letter_transform, default_colour);
                 } else {
@@ -322,7 +336,7 @@ void RenderedText::SetColour(UISystem* ui_system, Vec4 colour) {
         }
 }
 
-void RenderedText::Draw(UISystem* ui_system) {
+void RenderedText::Draw(UISystem* ui_system, bool transparent) {
         std::vector<ModelInstance> letter_draw_data;
         letter_draw_data.resize(letter_data.size());
 
@@ -350,15 +364,17 @@ void RenderedText::Draw(UISystem* ui_system) {
                 Mat4 letter_mat = glm::translate(Mat4(1.0f), position);
                 letter_mat      = glm::scale(letter_mat, scale);
 
-
-                letter_draw_data[i].model_id = ui_system->letter_model_id;
+                if (transparent) letter_draw_data[i].model_id = ui_system->transparent_letter_model_id;
+                else letter_draw_data[i].model_id = ui_system->letter_model_id;
 
                 letter_draw_data[i].transform.position = position;
                 letter_draw_data[i].transform.rotation = Quat{};
                 letter_draw_data[i].transform.scale    = scale;
 
-                letter_draw_data[i].colour0    = letter_data[i].colour;
-                letter_draw_data[i].user_value = letter_data[i].letter - 'A';
+                letter_draw_data[i].colour0 = letter_data[i].colour;
+
+                if (letter_data[i].letter >= 'A' and letter_data[i].letter <= 'Z') letter_draw_data[i].user_value = (letter_data[i].letter - 'A') + 10;
+                else letter_draw_data[i].user_value = letter_data[i].letter - '0';
 
                 switch (font_id) {
                         case FontID::Title:
