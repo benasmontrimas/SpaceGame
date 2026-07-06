@@ -37,17 +37,17 @@ struct CameraMatrices {
 // ===== INPUTS + OUTPUTS ===== //
 
 struct VertexData {
-        [[vk::location(0)]] float3 position;
-        [[vk::location(1)]] float3 normal;
-        [[vk::location(2)]] float2 uv;
+        float3 position;
+        float3 normal;
+        float2 uv;
 
-        [[vk::location(3)]] float4x4 model_matrix;
-        [[vk::location(7)]] float4   colour0;
-        [[vk::location(8)]] float4   colour1;
-        [[vk::location(9)]] u32      user_value;
-        [[vk::location(10)]] u32     user_value1;
-        [[vk::location(11)]] u32     user_value2;
-        [[vk::location(12)]] u32     user_value3;
+        float4x4 model_matrix;
+        float4   colour0;
+        float4   colour1;
+        u32      user_value;
+        u32     user_value1;
+        u32     user_value2;
+        u32     user_value3;
 };
 
 // ParameterBlock<VertexData> vertex_data;
@@ -125,6 +125,10 @@ ModelData model_data;
 
                         output.position                   = mul(input.model_matrix, float4(position, 1.0));
                         output.material_data.texture_id_1 = input.user_value1;
+
+                        output.colour0 = input.colour0;
+                        output.colour1 = input.colour1;
+
                         break;
                 case MaterialType::UI:
                         output.colour0 = input.colour0;
@@ -259,7 +263,10 @@ float4 Text(VSOutput input) {
         float4 colour = input.colour0;
         colour.xyz *= opacity;
 
-        return colour;
+        // printf("B %f %f %f %f\n", input.colour0.r, input.colour0.g, input.colour0.b, input.colour0.a);
+
+        return float4(input.colour0.xyz, 1.0f);
+        // return colour;
         // return lerp(float4(0, 0, 0, 1), float4(1, 1, 1, 1), signed_distance);
 }
 
@@ -322,6 +329,8 @@ float4 UIImage(VSOutput input) {
                 case MaterialType::Planet:
                         return PlanetMaterial(input);
                 case MaterialType::Text:
+
+                // printf("A %f %f %f %f\n", input.colour0.r, input.colour0.g, input.colour0.b, input.colour0.a);
                         return Text(input);
                 case MaterialType::UI:
                         return UI(input);

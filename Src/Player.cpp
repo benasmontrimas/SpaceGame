@@ -42,6 +42,7 @@ void PlayerController::Init(GameContext* _game_context, Planet* _planet, Transfo
         }
 
         world_up = Vec3{ 0.0f, 1.0f, 0.0f };
+        world_rotation = glm::quat_identity<float, glm::defaultp>();
 }
 
 void PlayerController::Update(float delta_time) {
@@ -135,6 +136,7 @@ void PlayerController::Update(float delta_time) {
 void Player::Init(GameContext* _game_context) {
         game_context       = _game_context;
         transform.position = { 10.0f, 12000.0f, 10.0f };
+        transform.rotation = glm::quat_identity<float, glm::defaultp>();
         camera.Init(game_context);
 }
 

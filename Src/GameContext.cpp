@@ -43,6 +43,7 @@ void GameContext::Init() {
 
         VkInstanceCreateInfo instance_info{
                 .sType                   = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
+                .pNext = nullptr,
                 .pApplicationInfo        = &app_info,
                 .enabledLayerCount       = (u32)instance_layers.size(),
                 .ppEnabledLayerNames     = instance_layers.data(),
@@ -281,6 +282,7 @@ void GameContext::Init() {
         // ===== Swapchain =====
 
         VkExtent2D swapchain_extent{ surface_capabilities.currentExtent };
+
         if (surface_capabilities.currentExtent.width == 0Xff'ff'ff'ff) { // This is a wayland thing?
                 swapchain_extent = { .width = u32(window.width), .height = u32(window.height) };
         }
@@ -297,7 +299,7 @@ void GameContext::Init() {
                 .imageUsage       = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
                 .preTransform     = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR,
                 .compositeAlpha   = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,
-                .presentMode      = VK_PRESENT_MODE_MAILBOX_KHR, // TODO: Check whats available
+                .presentMode      = VK_PRESENT_MODE_FIFO_KHR, // TODO: Check whats available
         };
 
         res = vkCreateSwapchainKHR(vulkan_device, &swapchain_info, nullptr, &vulkan_swapchain);
@@ -456,8 +458,7 @@ void GameContext::Init() {
 
         // NOTE: Why are these not just in 1 buffer? this way is easier, but also means were doing more allocations?
         for (u32 i = 0; i < max_frames_in_flight; i++) {
-                VmaAllocationCreateFlags allocation_flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
-                                                            VMA_ALLOCATION_CREATE_HOST_ACCESS_ALLOW_TRANSFER_INSTEAD_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT;
+                VmaAllocationCreateFlags allocation_flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT;
 
                 draw_data[i] = CreateGPUBuffer(vulkan_device, vulkan_allocator, sizeof(Material) * max_draw_count, graphics_queue_family,
                                                VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT, allocation_flags);
@@ -1145,6 +1146,8 @@ void GameContext::Shutdown() {
 }
 
 void GameContext::Render(const Camera& camera) {
+        // vkDeviceWaitIdle(vulkan_device);
+
         if (window.is_resized) {
                 Resize();
                 window.is_resized = false;

@@ -37,33 +37,33 @@ enum class MaterialType : u32 {
 };
 
 struct MaterialBase {
-        TextureID textures_ids[4];
+        TextureID textures_ids[4]{};
 };
 
 struct MaterialSkyMap {
-        TextureID texture_id;
+        TextureID texture_id{0};
 };
 
 struct MaterialPlanet {
-        TextureID ground_diffuse_texture_id;
-        TextureID ground_normal_texture_id;
+        TextureID ground_diffuse_texture_id{0};
+        TextureID ground_normal_texture_id{0};
 };
 
 struct MaterialText {
-        TextureID texture_start;
+        TextureID texture_start{0};
 };
 
 struct MaterialUI {};
 
 struct MaterialUIImage {
-        TextureID texture_id;
+        TextureID texture_id{0};
 };
 
 struct Material {
-        MaterialType type;
+        MaterialType type {};
 
         union {
-                MaterialBase   base;
+                MaterialBase   base{};
                 MaterialSkyMap skymap;
                 MaterialPlanet planet;
                 MaterialText   text;
@@ -115,11 +115,11 @@ struct TriangleBVHNode {
         AABB bounds;
 
         union {
-                u32 child_index;
+                u32 child_index{u32_max};
                 u32 index_count;
         };
 
-        u32 index_offset;
+        u32 index_offset{u32_max};
 };
 
 struct TriangleBVH {
@@ -146,20 +146,20 @@ struct TriangleBVH {
 
 // A vertex and index buffer to represent a single mesh
 struct Mesh {
-        GPUBuffer buffer;
-        u64       vertices_size;
-        u64       index_count;
+        GPUBuffer buffer{};
+        u64       vertices_size{0};
+        u64       index_count{0};
 
-        u32* indices;
-        VertexDrawData* vertices;
-        TriangleBVH bvh;
+        u32* indices{nullptr};
+        VertexDrawData* vertices{nullptr};
+        TriangleBVH bvh{};
 
         float Traverse(u32 node_index, Ray ray, float ray_length);
 };
 
 // A single instance of a model.
 struct ModelInstance {
-        ModelID model_id;
+        ModelID model_id{0};
 
         Transform transform;
         Vec4      colour0;
@@ -185,19 +185,19 @@ struct Model {
 
         // ===== Members ===== //
 
-        Mesh* meshes;
-        u32   mesh_count;
+        Mesh* meshes{nullptr};
+        u32   mesh_count{0};
 
-        InstanceDrawData* instance_draw_data;
-        u32               instance_count;
+        InstanceDrawData* instance_draw_data{nullptr};
+        u32               instance_count{0};
 
-        GPUBuffer instance_buffer;
+        GPUBuffer instance_buffer{};
 
-        Material material;
+        Material material{};
 
-        u32 last_frame_rendered;
+        u32 last_frame_rendered{0};
 
-        u32 max_instance_count;
+        u32 max_instance_count{0};
 
         bool is_transparent {false};
 
@@ -211,7 +211,7 @@ union ModelSlot {
 struct ModelSystem {
 
         std::vector<ModelSlot> models;
-        ModelID                next_free_index;
+        ModelID                next_free_index{0};
 
         GameContext* game_context;
 
@@ -250,8 +250,8 @@ struct Texture {
         void Load(VkDevice device, VkCommandPool command_pool, VkQueue queue, const std::string& file_name, const VmaAllocator& allocator);
         void Destroy(GameContext* game_context);
 
-        VkImage       image;
-        VkImageView   image_view;
-        VkSampler     sampler;
-        VmaAllocation allocation;
+        VkImage       image{};
+        VkImageView   image_view{};
+        VkSampler     sampler{};
+        VmaAllocation allocation{};
 };

@@ -27,7 +27,6 @@ struct PlayerController {
         float mouse_sensitivity{ 0.001f }; // Probably want as part of input
 
         Quat world_rotation;
-        Quat camera_rotation;
         Vec3 world_up;
         Vec3 velocity;
 

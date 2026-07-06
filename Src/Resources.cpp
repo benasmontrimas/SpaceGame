@@ -176,8 +176,8 @@ void TransferEngine::Init(VkDevice device, u32 transfer_queue_family_index, VmaA
 
         free_staging_buffer_region_count = 1;
         free_staging_buffer_regions[0]   = {
-                .block_offset = 0,
-                .block_count  = staging_buffer_block_count,
+                  .block_offset = 0,
+                  .block_count  = staging_buffer_block_count,
         };
 
         // ===== Initialise Job Queue ===== //

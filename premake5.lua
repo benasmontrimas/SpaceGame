@@ -10,6 +10,8 @@ project "SpaceGame"
         language "C++"
         cppdialect "C++23"
         symbols "On"
+        staticruntime "off"
+        runtime "Release"
 
         -- Output Location --
         location "Build/"
@@ -30,11 +32,15 @@ project "SpaceGame"
 
         libdirs {
                 "$(VULKAN_SDK)/lib/",
+                "External/FreeType/lib/",
+                "External/KTX/lib/",
+                "External/fmod/lib/x64/",
         }
 
         runpathdirs {
-                "External/slang/lib",
-                "External/fmod/lib/x86_64/",
+                -- "External/slang/lib",
+                -- "External/fmod/lib/x86_64/",
+                -- "External/fmod/lib/x64/",
         }
 
         -- Settings --
@@ -57,7 +63,9 @@ project "SpaceGame"
                         "SDL3",
                         "External/KTX/lib/ktx",
                         "volk",
-                        "slang"
+                        "slang",
+                        "External/FreeType/lib/freetype",
+                        "fmod_vc"
                 }
 
         filter "platforms:Linux"
@@ -76,7 +84,7 @@ project "SpaceGame"
                 }
 
         filter "configurations:Debug"
-                defines { "DEBUG", "DEBUG_TRACE", "DEBUG_INFO", "DEBUG_WARNINGS"}
+                defines { "DEBUG", "_DEBUG", "DEBUG_TRACE", "DEBUG_INFO", "DEBUG_WARNINGS"}
                 symbols "On"
 
         filter "configurations:Development"

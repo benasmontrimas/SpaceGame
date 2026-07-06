@@ -298,38 +298,38 @@ struct Planet {
 
         // ===== Members ===== //
 
-        Vec3 position;
+        Vec3 position{};
 
-        GameContext* game_context;
+        GameContext* game_context{};
 
-        VkCommandPool   command_pool;
-        VkCommandBuffer command_buffers[COMMAND_BUFFER_COUNT];
-        VkSemaphore     semaphores[COMMAND_BUFFER_COUNT];
+        VkCommandPool   command_pool{};
+        VkCommandBuffer command_buffers[COMMAND_BUFFER_COUNT]{};
+        VkSemaphore     semaphores[COMMAND_BUFFER_COUNT]{};
 
-        std::vector<u32> free_command_buffers;
-        VkPipelineLayout pipeline_layout;
-        VkPipeline       pipelines[GENERATION_PASS_COUNT];
+        std::vector<u32> free_command_buffers{};
+        VkPipelineLayout pipeline_layout{};
+        VkPipeline       pipelines[GENERATION_PASS_COUNT]{};
 
-        GPUBuffer edge_lookup_buffer;
-        GPUBuffer triangle_lookup_buffer;
+        GPUBuffer edge_lookup_buffer{};
+        GPUBuffer triangle_lookup_buffer{};
 
-        std::vector<PlanetChunk> chunks;
-        u32                      next_free_chunk;
+        std::vector<PlanetChunk> chunks{};
+        u32                      next_free_chunk{};
 
-        std::vector<PlanetChunkProgress> chunks_in_progress;
-        std::vector<ChunkID>             chunks_to_render;
-        std::vector<ChunkID>             chunks_to_destroy;
-        ChunkID                          destroy_count;
+        std::vector<PlanetChunkProgress> chunks_in_progress{};
+        std::vector<ChunkID>             chunks_to_render{};
+        std::vector<ChunkID>             chunks_to_destroy{};
+        ChunkID                          destroy_count{};
 
-        PlanetChunkTree tree;
+        PlanetChunkTree tree{};
 
-        Transform* target;
+        Transform* target{};
 
-        Texture ground_texture;
-        Texture ground_normal_texture;
-        Texture ground_disp_texture;
+        Texture ground_texture{};
+        Texture ground_normal_texture{};
+        Texture ground_disp_texture{};
 
-        Material planet_material;
+        Material planet_material{};
 
         // ===== Functions ===== //
 

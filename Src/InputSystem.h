@@ -4,7 +4,7 @@
 
 #include <string>
 
-constexpr u32 max_input_actions = 100;
+constexpr u32 max_input_actions = 1'000;
 
 enum class KeyCode : u32 {
         Unknown = 0,

@@ -115,10 +115,6 @@ void UISystem::CreateLetterModel() {
         // Counter clock wise
         Vec3 normal{ 0.0f, 0.0f, -1.0f };
 
-        constexpr float texture_row_size   = 512.0f;
-        constexpr float letter_row_size    = 64.0f;
-        constexpr float letters_in_row     = texture_row_size / letter_row_size;
-        // constexpr float texture_coord_size = 1.0f / letters_in_row;
         constexpr float texture_coord_size = 1.0f;
 
         // bottom left

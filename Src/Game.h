@@ -39,15 +39,15 @@ struct MainMenu {
 
         GameContext* game_context;
 
-        RenderedText title_text;
-        RenderedText name_text;
+        RenderedText title_text{};
+        RenderedText name_text{};
 
-        RenderedText menu_buttons[(u32)MenuButtonID::Count];
+        RenderedText menu_buttons[(u32)MenuButtonID::Count]{};
         MenuButtonID selected_button;
 
         ModelInstance logo_image;
         ModelInstance logo_background;
-        RenderedText  presents_text;
+        RenderedText  presents_text{};
 
         Action* menu_up_action;
         Action* menu_down_action;

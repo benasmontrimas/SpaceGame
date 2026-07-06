@@ -336,7 +336,7 @@ void Game::Init() {
         {
                 sky_sphere_model = game_context.model_system.LoadModel("Assets/Models/SkySphere.obj", 1);
 
-                skymap.Load(game_context.vulkan_device, game_context.graphics_command_pool, game_context.graphics_queue, "Assets/SkyMaps/SpacePlanet.ktx",
+                skymap.Load(game_context.vulkan_device, game_context.graphics_command_pool, game_context.graphics_queue, "Assets/SkyMaps/SpaceLDR.ktx",
                             game_context.vulkan_allocator);
                 game_context.AddTexture(skymap, 0);
 
@@ -414,9 +414,7 @@ void Game::Init() {
 
 
         picked_up_text.Init(&game_context.ui_system, FontID::Default, 100);
-        picked_up_text.transform.position = {
-                -0.9f, -0.9f, 0.0f
-        };
+        picked_up_text.transform.position = { -0.9f, -0.9f, 0.0f };
 
         pause_background.transform.position = {
                 -0.5f,
@@ -582,7 +580,6 @@ void Game::Run() {
                 } else {
                         sky_sphere.transform.position = player.transform.position;
                         player.Update(delta_time);
-
 
                         for (u32 i = 0; i < 1'000; i++) {
                                 rocks[i].Update(&planet, player.transform);

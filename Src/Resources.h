@@ -6,14 +6,14 @@
 
 struct GPUBuffer {
         VkBuffer          buffer{ VK_NULL_HANDLE };
-        VmaAllocation     allocation;
-        VmaAllocationInfo allocation_info;
-        VkDeviceAddress   device_address;
+        VmaAllocation     allocation{};
+        VmaAllocationInfo allocation_info{};
+        VkDeviceAddress   device_address{};
 
         // ===== Synchronization ====== //
 
-        VkSemaphore ownership_semaphore;
-        VkSemaphore transfer_semaphore;
+        VkSemaphore ownership_semaphore{};
+        VkSemaphore transfer_semaphore{};
 
         u32 owning_queue_family; // This sets which family queue owns this resource
 

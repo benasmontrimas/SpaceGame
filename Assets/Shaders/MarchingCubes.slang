@@ -204,6 +204,8 @@ void Pass1(uint3 dispatch_id : SV_DispatchThreadID) {
         const u32 first_edge_index = (coords.z * edge_z_step) + (coords.y * edge_y_step);
         const u32 first_sum_index  = (coords.z * sum_z_step) + (coords.y * sum_y_step);
 
+        // if (first_edge_index == 0) printf("Pass1\n");
+
         // ====================== //
         // ===== Start Pass ===== //
         // ====================== //
@@ -277,6 +279,7 @@ void Pass2(uint3 dispatch_id : SV_DispatchThreadID) {
 
         const u32 first_edge_index = (coords.z * edge_z_step) + (coords.y * edge_y_step);
         const u32 first_sum_index  = (coords.z * sum_z_step) + (coords.y * sum_y_step);
+        // if (first_edge_index == 0) printf("Pass2\n");
 
         // ====================== //
         // ===== Start Pass ===== //
@@ -395,7 +398,7 @@ void Pass2(uint3 dispatch_id : SV_DispatchThreadID) {
 groupshared uint group_vertex_offsets[256 / 32];
 groupshared uint group_index_offsets[256 / 32];
 
-[[shader("compute")]] [[require(SPV_KHR_non_semantic_info, spvGroupNonUniformBallot, spvGroupNonUniformArithmetic,
+[[shader("compute")]] [[require(spvGroupNonUniform, SPV_KHR_non_semantic_info, spvGroupNonUniformBallot, spvGroupNonUniformArithmetic,
                                 spvGroupNonUniformVote)]] [[numthreads(127, 1, 1)]]
 void Pass3(uint3 dispatch_id : SV_DispatchThreadID, int3 group_thread_coord : SV_GroupThreadID, uint3 group_coord : SV_GroupID) {
         // ============================== //
@@ -432,6 +435,7 @@ void Pass3(uint3 dispatch_id : SV_DispatchThreadID, int3 group_thread_coord : SV
 
         const u32 first_sum_index = (coords.z * sum_z_step) + (coords.y * sum_y_step);
 
+        // if (first_edge_index == 0) printf("Pass3\n");
         // ====================== //
         // ===== Start Pass ===== //
         // ====================== //
@@ -441,11 +445,13 @@ void Pass3(uint3 dispatch_id : SV_DispatchThreadID, int3 group_thread_coord : SV
 
         // == Get Wave Values == //
 
-        u32 wave_count = WaveGetNumWaves();
 
         u32 lane_count = WaveGetLaneCount();
         u32 lane_index = WaveGetLaneIndex();
         u32 wave_index = group_thread_coord.x / lane_count;
+        u32 wave_count = (127 + (lane_count - 1)) / lane_count;
+
+        // printf("SDJHADJS, %u %u \n", lane_count, lane_index);
 
 
         // == Initialise groupshared memory == //
@@ -455,7 +461,9 @@ void Pass3(uint3 dispatch_id : SV_DispatchThreadID, int3 group_thread_coord : SV
                 group_index_offsets[wave_index]  = 0;
         }
 
+        // if (first_edge_index == 0) printf("Pass3-1\n");
         GroupMemoryBarrierWithGroupSync();
+        // if (first_edge_index == 0) printf("Pass3-2\n");
 
         const u32 last_sum_index = first_sum_index + (sum_y_count - 1);
 
@@ -512,7 +520,9 @@ void Pass3(uint3 dispatch_id : SV_DispatchThreadID, int3 group_thread_coord : SV
                 }
         }
 
+        // if (first_edge_index == 0) printf("Pass3-3\n");
         GroupMemoryBarrierWithGroupSync();
+        // if (first_edge_index == 0) printf("Pass3-4\n");
 
         if (is_valid_index) {
                 u32 group_vertex_offset = group_vertex_offsets[wave_index];
@@ -543,6 +553,7 @@ void Pass3(uint3 dispatch_id : SV_DispatchThreadID, int3 group_thread_coord : SV
                 // }
                 // // === END DUBUG === //
         }
+        // if (first_edge_index == 0) printf("Pass3-5\n");
 }
 
 u32 Bit(u32 b) {
@@ -587,6 +598,7 @@ void Pass4(uint3 dispatch_id : SV_DispatchThreadID) {
         const u32 first_edge_index = (coords.z * edge_z_step) + (coords.y * edge_y_step);
         const u32 first_sum_index  = (coords.z * sum_z_step) + (coords.y * sum_y_step);
 
+        // if (first_edge_index == 0) printf("Pass4\n");
         // ====================== //
         // ===== Start Pass ===== //
         // ====================== //
@@ -1000,6 +1012,7 @@ Pass5(uint3 dispatch_id : SV_DispatchThreadID, uint group_index : SV_GroupIndex)
 
         const u32 first_edge_index = (coords.z * edge_z_step) + (coords.y * edge_y_step);
         const u32 first_sum_index  = (coords.z * sum_z_step) + (coords.y * sum_y_step);
+        // if (first_edge_index == 0) printf("Pass5\n");
 
         // ====================== //
         // ===== Start Pass ===== //
@@ -1097,6 +1110,7 @@ Pass6(uint3 dispatch_id : SV_DispatchThreadID, uint group_index : SV_GroupIndex)
 
         const u32 first_edge_index = (coords.z * edge_z_step) + (coords.y * edge_y_step);
         const u32 first_sum_index  = (coords.z * sum_z_step) + (coords.y * sum_y_step);
+        // if (first_edge_index == 0) printf("Pass6\n");
 
         // ====================== //
         // ===== Start Pass ===== //

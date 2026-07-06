@@ -23,7 +23,7 @@ void Model::Init(GameContext* game_context, VertexDrawData* vertices, u64 vertex
 
         // ===== BVH ===== //
 
-        meshes[0].bvh.Init(vertices, vertex_count, indices, index_count);
+        // meshes[0].bvh.Init(vertices, (u32)vertex_count, indices, (u32)index_count);
 
         // ===== Allocate Buffer ===== //
 
@@ -113,7 +113,7 @@ void Model::LoadFromOBJ(GameContext* game_context, const std::string& file_name,
                 exit(1);
         }
 
-        mesh_count = shapes.size();
+        mesh_count = (u32)shapes.size();
         meshes     = new Mesh[mesh_count]();
 
         for (size_t mesh_index = 0; mesh_index < mesh_count; mesh_index++) {
@@ -152,13 +152,12 @@ void Model::LoadFromOBJ(GameContext* game_context, const std::string& file_name,
                 VkDeviceSize index_buffer_size{ sizeof(u32) * indices.size() };
                 VkDeviceSize buffer_size{ vertex_buffer_size + index_buffer_size };
 
-                VmaAllocationCreateFlags allocation_flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
-                                                            VMA_ALLOCATION_CREATE_HOST_ACCESS_ALLOW_TRANSFER_INSTEAD_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT;
+                VmaAllocationCreateFlags allocation_flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT;
 
 
                 // ===== BVH ===== //
 
-                meshes[0].bvh.Init(&vertices[0], vertices.size(), &indices[0], indices.size());
+                // meshes[0].bvh.Init(&vertices[0], (u32)vertices.size(), &indices[0], (u32)indices.size());
 
 
                 meshes[mesh_index].buffer =
@@ -236,12 +235,12 @@ void Model::Draw(GameContext* game_context, VkCommandBuffer command_buffer, VkPi
                 VkBuffer     buffers[2]       = { mesh.buffer.buffer, instance_buffer.buffer };
                 vkCmdBindVertexBuffers(command_buffer, 0, 2, &buffers[0], &vertex_offset[0]);
 
-                u32 index_offset = mesh.vertices_size;
+                u32 index_offset = (u32)mesh.vertices_size;
                 vkCmdBindIndexBuffer(command_buffer, mesh.buffer.buffer, index_offset, VK_INDEX_TYPE_UINT32);
 
                 // == Draw == //
 
-                vkCmdDrawIndexed(command_buffer, mesh.index_count, instance_count, 0, 0, 0);
+                vkCmdDrawIndexed(command_buffer, (u32)mesh.index_count, (u32)instance_count, 0, 0, 0);
         }
 
         instance_count = 0;
@@ -274,7 +273,10 @@ void Texture::Load(VkDevice device, VkCommandPool command_pool, VkQueue queue, c
                 .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
         };
 
-        VmaAllocationCreateInfo texture_image_allocation_info{ .usage = VMA_MEMORY_USAGE_AUTO };
+        VmaAllocationCreateInfo texture_image_allocation_info{
+                // .flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT,
+                .usage = VMA_MEMORY_USAGE_AUTO,
+        };
 
         res = vmaCreateImage(allocator, &texture_image_info, &texture_image_allocation_info, &image, &allocation, nullptr);
 
@@ -305,8 +307,9 @@ void Texture::Load(VkDevice device, VkCommandPool command_pool, VkQueue queue, c
         // ===== Upload Texture To GPU =====
         // TODO: Use a Transfer Queue? Can copy images whilst rendering.
 
-        VkBuffer      image_src_buffer{};
-        VmaAllocation image_src_allocation{};
+        VkBuffer          image_src_buffer{};
+        VmaAllocation     image_src_allocation{};
+        VmaAllocationInfo image_src_allocation_info{};
 
         VkBufferCreateInfo image_src_buffer_info{
                 .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
@@ -319,7 +322,6 @@ void Texture::Load(VkDevice device, VkCommandPool command_pool, VkQueue queue, c
                 .usage = VMA_MEMORY_USAGE_AUTO,
         };
 
-        VmaAllocationInfo image_src_allocation_info{};
 
         res = vmaCreateBuffer(allocator, &image_src_buffer_info, &image_src_allocation_create_info, &image_src_buffer, &image_src_allocation,
                               &image_src_allocation_info);
@@ -333,7 +335,7 @@ void Texture::Load(VkDevice device, VkCommandPool command_pool, VkQueue queue, c
 
         VkFenceCreateInfo fence_info{ .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO };
 
-        VkFence fence;
+        VkFence fence{};
         res = vkCreateFence(device, &fence_info, nullptr, &fence);
 
         if (res != VK_SUCCESS) {
@@ -392,8 +394,10 @@ void Texture::Load(VkDevice device, VkCommandPool command_pool, VkQueue queue, c
 
         vkCmdPipelineBarrier2(command_buffer, &texture_barrier_info);
 
-        std::vector<VkBufferImageCopy> copy_regions(ktx_texture->numLevels);
+        std::vector<VkBufferImageCopy> copy_regions;
+        copy_regions.resize(ktx_texture->numLevels);
 
+        std::println("Copy Regions: {}", ktx_texture->numLevels);
         for (u32 i = 0; i < copy_regions.size(); i++) {
                 ktx_size_t     mip_offset{ 0 };
                 KTX_error_code ktx_err = ktxTexture_GetImageOffset(ktx_texture, i, 0, 0, &mip_offset);
@@ -416,7 +420,10 @@ void Texture::Load(VkDevice device, VkCommandPool command_pool, VkQueue queue, c
                                 .depth = 1,
                         }
                 };
+
+                std::println("Texture: {}, {}", copy_regions[i].imageExtent.width, copy_regions[i].imageExtent.height);
         }
+
 
         vkCmdCopyBufferToImage(command_buffer, image_src_buffer, image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, (u32)copy_regions.size(), copy_regions.data());
 
@@ -481,7 +488,7 @@ void Texture::Load(VkDevice device, VkCommandPool command_pool, VkQueue queue, c
                 .minFilter        = VK_FILTER_LINEAR,
                 .mipmapMode       = VK_SAMPLER_MIPMAP_MODE_LINEAR,
                 .anisotropyEnable = VK_TRUE,
-                .maxAnisotropy    = 8.0f,
+                .maxAnisotropy    = 1.0f,
                 .maxLod           = (float)ktx_texture->numLevels,
         };
 
@@ -611,7 +618,7 @@ void ModelSystem::Draw(ModelInstance instance) {
                                                            instance.user_value1, instance.user_value2, instance.user_value3 };
         model.instance_count++;
 
-        model.last_frame_rendered = game_context->frames_submitted + 2;
+        model.last_frame_rendered = (u32)game_context->frames_submitted + 2;
 }
 
 void Model::Acquire(GameContext* game_context, VkCommandBuffer command_buffer, std::vector<VkSemaphore>& wait_semaphores) {
@@ -698,8 +705,8 @@ float TriangleBVH::CalculateCost(float parent_area, u32 index_count, const Trian
         float left_area  = left.bounds.Area();
         float right_area = right.bounds.Area();
 
-        float left_triangle_count  = left.index_count / 3;
-        float right_triangle_count = right.index_count / 3;
+        float left_triangle_count  = float(left.index_count / 3);
+        float right_triangle_count = float(right.index_count / 3);
 
         float cost = bounds_intersect_cost + (left_area / parent_area) * left_triangle_count * triangle_intersect_cost +
                      (right_area / parent_area) * right_triangle_count * triangle_intersect_cost;
@@ -867,7 +874,7 @@ void TriangleBVH::Split(VertexDrawData* vertices, u32* indices, u32 index_count,
                 right_child.bounds.Extend(vertices[indices[i]].position);
         }
 
-        nodes[node_index].child_index = nodes.size();
+        nodes[node_index].child_index = (u32)nodes.size();
         nodes.push_back(left_child);
         nodes.push_back(right_child);
 

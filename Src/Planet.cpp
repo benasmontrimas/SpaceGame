@@ -556,7 +556,7 @@ void Planet::ProcessChunkIfAvailable(PlanetChunkProgress& chunk_progress) {
 }
 
 void Planet::UpdateStates() {
-        i32 chunk_in_progress_count = chunks_in_progress.size();
+        i32 chunk_in_progress_count = (i32)chunks_in_progress.size();
 
         // ===== Loop chunks in progress in reverse ===== //
 
@@ -645,7 +645,7 @@ void Planet::UpdateStates() {
                                         // chunk_mesh.indices = (u32*)(chunk_progress.mesh_data + chunk_mesh.vertices_size);
 
                                         chunk_mesh.bvh.Init(chunk_mesh.vertices, chunk_mesh.vertices_size / sizeof(VertexDrawData), chunk_mesh.indices,
-                                                            chunk_mesh.index_count);
+                                        chunk_mesh.index_count);
 
                                         free(chunk_progress.mesh_data);
                                         chunk_progress.mesh_data = nullptr;
@@ -728,7 +728,6 @@ ChunkID Planet::GenerateChunk(AABB bounds, u32 lod) {
                 .position    = chunk_position,
                 .seed        = PLANET_SEED,
         };
-
 
         // ===== Find a chunk index ===== //
 
@@ -1064,8 +1063,8 @@ void Planet::RecordStageTwo(PlanetChunkProgress& chunk_progress) {
 
         // == Pass Four == //
 
-        constexpr u32 PASS_4_X_DISPATCH_COUNT = (CHUNK_CELLS + (THREAD_GROUP_X - 1)) / THREAD_GROUP_X;
-        constexpr u32 PASS_4_Y_DISPATCH_COUNT = (CHUNK_CELLS + (THREAD_GROUP_Y - 1)) / THREAD_GROUP_Y;
+        constexpr u32 PASS_4_X_DISPATCH_COUNT = (127 + (64 - 1)) / 64;
+        constexpr u32 PASS_4_Y_DISPATCH_COUNT = (127 + (1 - 1)) / 1;
 
         vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, pipelines[(u32)PlanetPipelineID::Pass4]);
         vkCmdPushConstants(command_buffer, pipeline_layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(PlanetCreationInfo), &chunk_progress.info);
@@ -1196,8 +1195,12 @@ void Planet::RecordStageTwo(PlanetChunkProgress& chunk_progress) {
         submit_info.sType                    = VK_STRUCTURE_TYPE_SUBMIT_INFO_2;
         submit_info.signalSemaphoreInfoCount = 2;
         submit_info.pSignalSemaphoreInfos    = &signal_semaphore_infos[0];
+        submit_info.waitSemaphoreInfoCount = 0;
+        submit_info.pWaitSemaphoreInfos    = nullptr;
         submit_info.commandBufferInfoCount   = 1;
         submit_info.pCommandBufferInfos      = &command_buffer_submit_info;
+
+        std::println("dEfo Submitted");
 
         vkQueueSubmit2(game_context->compute_queue, 1, &submit_info, VK_NULL_HANDLE);
 }
