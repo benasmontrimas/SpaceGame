@@ -214,12 +214,25 @@ bool MainMenu::Update(float delta_time) {
         DrawIntro(delta_time);
         // if (time_active < 20.0f) return true;
 
+        float text_scale = game_context->window.height / 2160.0f;
+        title_text.text_size = 512.0f * text_scale;
+        title_text.SetText(&game_context->ui_system, "The Lonely\n Surveyor");
+
+        title_text.transform.position = {
+                -(title_text.width / game_context->window.width) / 2.0f,
+                -(title_text.height / game_context->window.height),
+                0.0f,
+        };
+
         // ===== Update UI ===== //
 
         constexpr Vec4 selected_button_colour   = { 1.0f, 1.0f, 1.0f, 1.0f };
         constexpr Vec4 unselected_button_colour = { 0.1f, 0.1f, 0.1f, 1.0f };
 
         for (u32 i = 0; i < (u32)MenuButtonID::Count; i++) {
+                menu_buttons[i].text_size =  160.0f * text_scale;
+                menu_buttons[i].SetText(&game_context->ui_system, menu_buttons[i].text);
+
                 if ((MenuButtonID)i == selected_button) {
                         menu_buttons[i].SetColour(&game_context->ui_system, selected_button_colour);
                 } else {
@@ -486,7 +499,7 @@ void Game::Run() {
                 frame_time += delta_time;
                 frame_count++;
                 if (frame_time >= 1.0f) {
-                        std::println("FPS: {}", frame_count);
+                        // std::println("FPS: {}", frame_count);
                         frame_count = 0;
                         frame_time -= 1.0f;
                 }

@@ -444,7 +444,7 @@ void Planet::Init(GameContext* _game_context, Transform* _target) {
 
         // Need to acquire the buffers on the compute queue.
 
-        triangle_lookup_buffer.Print();
+        // triangle_lookup_buffer.Print();
 
         tree.Init(this);
 
@@ -1200,7 +1200,8 @@ void Planet::RecordStageTwo(PlanetChunkProgress& chunk_progress) {
         submit_info.commandBufferInfoCount   = 1;
         submit_info.pCommandBufferInfos      = &command_buffer_submit_info;
 
-        std::println("dEfo Submitted");
+        // std::println("dEfo Submitted");
+        // std::println("dEfo Submitted");
 
         vkQueueSubmit2(game_context->compute_queue, 1, &submit_info, VK_NULL_HANDLE);
 }

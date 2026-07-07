@@ -23,18 +23,14 @@ project "SpaceGame"
 
         -- External Libraries --
         externalincludedirs {
-                "External",
-                "External/KTX",
-                "External/FreeType",
-                "External/fmod/inc/",
-                "$(VULKAN_SDK)/include",
+                "External/include",
+                "External/include/KTX",
+                "External/include/FreeType",
+                "External/include/fmod/inc/",
         }
 
         libdirs {
-                "$(VULKAN_SDK)/lib/",
-                "External/FreeType/lib/",
-                "External/KTX/lib/",
-                "External/fmod/lib/x64/",
+                "External/lib"
         }
 
         runpathdirs {
@@ -47,13 +43,6 @@ project "SpaceGame"
         externalwarnings "Off"
         defines { "VK_NO_PROTOTYPES" }
 
-        -- externalincludedirs { "External/", "External/KTX", "$(VULKAN_SDK)/include" }
-        -- warnings "Extra"
-        -- enableunitybuild "On"
-
-
-        -- links { "$(VULKAN_SDK)/lib/vulkan", "External/KTX/lib/ktx", "$(VULKAN_SDK)/lib/SDL3", "$(VULKAN_SDK)/lib/volk", "$(VULKAN_SDK)/lib/slang"}
-
         filter "platforms:Windows"
                 defines { "OS_WINDOWS" }
                 system ("windows")
@@ -61,12 +50,15 @@ project "SpaceGame"
                 links {
                         "vulkan-1",
                         "SDL3",
-                        "External/KTX/lib/ktx",
+                        "ktx",
                         "volk",
                         "slang",
-                        "External/FreeType/lib/freetype",
+                        "freetype",
                         "fmod_vc"
                 }
+
+                -- filter "configurations:Release"
+                kind "WindowedApp"
 
         filter "platforms:Linux"
                 defines { "OS_LINUX" }
@@ -93,27 +85,6 @@ project "SpaceGame"
                 optimize "Debug"
 
         filter "configurations:Release"
-              -- kind "WindowedApp"
                 symbols "Off"
                 defines { "RELEASE" }
                 optimize "On"
-
--- project "ShaderCheck"
---         kind "ConsoleApp"
---         language "C++"
---         cppdialect "C++23"
---         location "Tools/Build"
-
---         files { "Tools/ShaderCheck.cpp" }
-
---         targetdir "Tools/Bin/%{cfg.buildcfg}"
-
---         includedirs { "Src/" }
---         externalincludedirs { "$(VULKAN_SDK)/include" }
-
---         warnings "Extra"
-
---         enableunitybuild "On"
---         externalwarnings "Off"
-
---         links { "$(VULKAN_SDK)/lib/slang" }

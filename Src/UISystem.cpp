@@ -316,7 +316,8 @@ void RenderedText::SetText(UISystem* ui_system, const std::string& new_text) {
                                         break;
 
                                 default:
-                                        std::println("[WARN] Character is not supported, skipping: {}", letter);
+                                        // std::println("[WARN] Character is not supported, skipping: {}", letter);
+                                        break;
                         }
                 }
 

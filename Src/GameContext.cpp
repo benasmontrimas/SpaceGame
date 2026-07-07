@@ -258,7 +258,7 @@ void GameContext::Init() {
 
         // ===== Window =====
 
-        window.window = SDL_CreateWindow("Space Game", 1'920, 1'080, SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE);
+        window.window = SDL_CreateWindow("Space Game", 1'920, 1'080, SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE | SDL_WINDOW_MAXIMIZED);
 
         if (!window.window) {
                 std::println("Window failed to create");
@@ -1178,7 +1178,7 @@ void GameContext::Render(const Camera& camera) {
                 }
 
                 swapchain_needs_resizing = true;
-                std::println("Resize?");
+                // std::println("Resize?");
         }
 
 

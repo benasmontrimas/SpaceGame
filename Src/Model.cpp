@@ -397,7 +397,7 @@ void Texture::Load(VkDevice device, VkCommandPool command_pool, VkQueue queue, c
         std::vector<VkBufferImageCopy> copy_regions;
         copy_regions.resize(ktx_texture->numLevels);
 
-        std::println("Copy Regions: {}", ktx_texture->numLevels);
+        // std::println("Copy Regions: {}", ktx_texture->numLevels);
         for (u32 i = 0; i < copy_regions.size(); i++) {
                 ktx_size_t     mip_offset{ 0 };
                 KTX_error_code ktx_err = ktxTexture_GetImageOffset(ktx_texture, i, 0, 0, &mip_offset);
@@ -421,7 +421,7 @@ void Texture::Load(VkDevice device, VkCommandPool command_pool, VkQueue queue, c
                         }
                 };
 
-                std::println("Texture: {}, {}", copy_regions[i].imageExtent.width, copy_regions[i].imageExtent.height);
+                // std::println("Texture: {}, {}", copy_regions[i].imageExtent.width, copy_regions[i].imageExtent.height);
         }
 
 
