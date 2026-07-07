@@ -1,0 +1,313 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug Windows|x64">
+      <Configuration>Debug Windows</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Debug Linux|x64">
+      <Configuration>Debug Linux</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Development Windows|x64">
+      <Configuration>Development Windows</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Development Linux|x64">
+      <Configuration>Development Linux</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release Windows|x64">
+      <Configuration>Release Windows</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release Linux|x64">
+      <Configuration>Release Linux</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <ProjectGuid>{AB504E2C-17BB-02A3-60F9-B348CCA2E0F7}</ProjectGuid>
+    <IgnoreWarnCompileDuplicatedFilename>true</IgnoreWarnCompileDuplicatedFilename>
+    <Keyword>Win32Proj</Keyword>
+    <RootNamespace>SpaceGame</RootNamespace>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug Linux|x64'" Label="Globals">
+    <Keyword>Linux</Keyword>
+    <RootNamespace>SpaceGame</RootNamespace>
+    <MinimumVisualStudioVersion>15.0</MinimumVisualStudioVersion>
+    <ApplicationType>Linux</ApplicationType>
+    <TargetLinuxPlatform>Generic</TargetLinuxPlatform>
+    <ApplicationTypeRevision>1.0</ApplicationTypeRevision>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Development Linux|x64'" Label="Globals">
+    <Keyword>Linux</Keyword>
+    <RootNamespace>SpaceGame</RootNamespace>
+    <MinimumVisualStudioVersion>15.0</MinimumVisualStudioVersion>
+    <ApplicationType>Linux</ApplicationType>
+    <TargetLinuxPlatform>Generic</TargetLinuxPlatform>
+    <ApplicationTypeRevision>1.0</ApplicationTypeRevision>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release Linux|x64'" Label="Globals">
+    <Keyword>Linux</Keyword>
+    <RootNamespace>SpaceGame</RootNamespace>
+    <MinimumVisualStudioVersion>15.0</MinimumVisualStudioVersion>
+    <ApplicationType>Linux</ApplicationType>
+    <TargetLinuxPlatform>Generic</TargetLinuxPlatform>
+    <ApplicationTypeRevision>1.0</ApplicationTypeRevision>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug Windows|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <CharacterSet>Unicode</CharacterSet>
+    <PlatformToolset>v143</PlatformToolset>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug Linux|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseOfStl>libstdc++_shared</UseOfStl>
+    <PlatformToolset>v143</PlatformToolset>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Development Windows|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <CharacterSet>Unicode</CharacterSet>
+    <PlatformToolset>v143</PlatformToolset>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Development Linux|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseOfStl>libstdc++_shared</UseOfStl>
+    <PlatformToolset>v143</PlatformToolset>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release Windows|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <CharacterSet>Unicode</CharacterSet>
+    <PlatformToolset>v143</PlatformToolset>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release Linux|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseOfStl>libstdc++_shared</UseOfStl>
+    <PlatformToolset>v143</PlatformToolset>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <ImportGroup Label="ExtensionSettings">
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug Windows|x64'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug Linux|x64'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Development Windows|x64'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Development Linux|x64'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release Windows|x64'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release Linux|x64'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <PropertyGroup Label="UserMacros" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug Windows|x64'">
+    <LinkIncremental>true</LinkIncremental>
+    <OutDir>$(ProjectDir)..\Bin\Debug\</OutDir>
+    <IntDir>$(ProjectDir)obj\Windows\Debug\</IntDir>
+    <TargetName>SpaceGame</TargetName>
+    <TargetExt>.exe</TargetExt>
+    <ExternalIncludePath>..\External\include;..\External\include\KTX;..\External\include\FreeType;..\External\include\fmod\inc;$(ExternalIncludePath)</ExternalIncludePath>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug Linux|x64'">
+    <OutDir>$(ProjectDir)..\Bin\Debug\</OutDir>
+    <IntDir>$(ProjectDir)obj\Linux\Debug\</IntDir>
+    <TargetName>SpaceGame</TargetName>
+    <TargetExt>
+    </TargetExt>
+    <ExternalIncludePath>..\External\include;..\External\include\KTX;..\External\include\FreeType;..\External\include\fmod\inc;$(ExternalIncludePath)</ExternalIncludePath>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Development Windows|x64'">
+    <LinkIncremental>true</LinkIncremental>
+    <OutDir>$(ProjectDir)..\Bin\Development\</OutDir>
+    <IntDir>$(ProjectDir)obj\Windows\Development\</IntDir>
+    <TargetName>SpaceGame</TargetName>
+    <TargetExt>.exe</TargetExt>
+    <ExternalIncludePath>..\External\include;..\External\include\KTX;..\External\include\FreeType;..\External\include\fmod\inc;$(ExternalIncludePath)</ExternalIncludePath>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Development Linux|x64'">
+    <OutDir>$(ProjectDir)..\Bin\Development\</OutDir>
+    <IntDir>$(ProjectDir)obj\Linux\Development\</IntDir>
+    <TargetName>SpaceGame</TargetName>
+    <TargetExt>
+    </TargetExt>
+    <ExternalIncludePath>..\External\include;..\External\include\KTX;..\External\include\FreeType;..\External\include\fmod\inc;$(ExternalIncludePath)</ExternalIncludePath>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release Windows|x64'">
+    <LinkIncremental>false</LinkIncremental>
+    <OutDir>$(ProjectDir)..\Bin\Release\</OutDir>
+    <IntDir>$(ProjectDir)obj\Windows\Release\</IntDir>
+    <TargetName>SpaceGame</TargetName>
+    <TargetExt>.exe</TargetExt>
+    <ExternalIncludePath>..\External\include;..\External\include\KTX;..\External\include\FreeType;..\External\include\fmod\inc;$(ExternalIncludePath)</ExternalIncludePath>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release Linux|x64'">
+    <OutDir>$(ProjectDir)..\Bin\Release\</OutDir>
+    <IntDir>$(ProjectDir)obj\Linux\Release\</IntDir>
+    <TargetName>SpaceGame</TargetName>
+    <TargetExt>
+    </TargetExt>
+    <ExternalIncludePath>..\External\include;..\External\include\KTX;..\External\include\FreeType;..\External\include\fmod\inc;$(ExternalIncludePath)</ExternalIncludePath>
+  </PropertyGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug Windows|x64'">
+    <ClCompile>
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <WarningLevel>Level3</WarningLevel>
+      <PreprocessorDefinitions>VK_NO_PROTOTYPES;OS_WINDOWS;DEBUG;_DEBUG;DEBUG_TRACE;DEBUG_INFO;DEBUG_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>..\Src;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <DebugInformationFormat>EditAndContinue</DebugInformationFormat>
+      <Optimization>Disabled</Optimization>
+      <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
+      <LanguageStandard>stdcpplatest</LanguageStandard>
+      <ExternalWarningLevel>TurnOffAllWarnings</ExternalWarningLevel>
+    </ClCompile>
+    <Link>
+      <SubSystem>Console</SubSystem>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <AdditionalDependencies>vulkan-1.lib;SDL3.lib;ktx.lib;volk.lib;slang.lib;freetype.lib;fmod_vc.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalLibraryDirectories>..\External\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+    </Link>
+    <PostBuildEvent>
+      <Command>powershell -ExecutionPolicy Bypass -File ../Scripts/CopyAssets.ps1 Debug</Command>
+    </PostBuildEvent>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug Linux|x64'">
+    <ClCompile>
+      <PreprocessorDefinitions>VK_NO_PROTOTYPES;OS_LINUX;DEBUG;_DEBUG;DEBUG_TRACE;DEBUG_INFO;DEBUG_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>..\Src;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <Optimization>Disabled</Optimization>
+      <DebugInformationFormat>Minimal</DebugInformationFormat>
+      <ExceptionHandling>Enabled</ExceptionHandling>
+      <AdditionalOptions>-Wno-missing-field-initializers %(AdditionalOptions)</AdditionalOptions>
+      <CppLanguageStandard>c++23</CppLanguageStandard>
+    </ClCompile>
+    <Link>
+      <AdditionalDependencies>vulkan.lib;SDL3.lib;..\External\KTX\lib\ktx.lib;volk.lib;..\External\slang\lib\slang.lib;freetype.lib;..\External\fmod\lib\x86_64\fmod.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalLibraryDirectories>..\External\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Development Windows|x64'">
+    <ClCompile>
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <WarningLevel>Level3</WarningLevel>
+      <PreprocessorDefinitions>VK_NO_PROTOTYPES;OS_WINDOWS;DEBUG;DEBUG_TRACE;DEBUG_INFO;DEBUG_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>..\Src;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <DebugInformationFormat>EditAndContinue</DebugInformationFormat>
+      <Optimization>Disabled</Optimization>
+      <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
+      <LanguageStandard>stdcpplatest</LanguageStandard>
+      <ExternalWarningLevel>TurnOffAllWarnings</ExternalWarningLevel>
+    </ClCompile>
+    <Link>
+      <SubSystem>Windows</SubSystem>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <AdditionalDependencies>vulkan-1.lib;SDL3.lib;ktx.lib;volk.lib;slang.lib;freetype.lib;fmod_vc.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalLibraryDirectories>..\External\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+    </Link>
+    <PostBuildEvent>
+      <Command>powershell -ExecutionPolicy Bypass -File ../Scripts/CopyAssets.ps1 Development</Command>
+    </PostBuildEvent>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Development Linux|x64'">
+    <ClCompile>
+      <PreprocessorDefinitions>VK_NO_PROTOTYPES;OS_LINUX;DEBUG;DEBUG_TRACE;DEBUG_INFO;DEBUG_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>..\Src;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <Optimization>Disabled</Optimization>
+      <DebugInformationFormat>Minimal</DebugInformationFormat>
+      <ExceptionHandling>Enabled</ExceptionHandling>
+      <AdditionalOptions>-Wno-missing-field-initializers %(AdditionalOptions)</AdditionalOptions>
+      <CppLanguageStandard>c++23</CppLanguageStandard>
+    </ClCompile>
+    <Link>
+      <AdditionalDependencies>vulkan.lib;SDL3.lib;..\External\KTX\lib\ktx.lib;volk.lib;..\External\slang\lib\slang.lib;freetype.lib;..\External\fmod\lib\x86_64\fmod.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalLibraryDirectories>..\External\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release Windows|x64'">
+    <ClCompile>
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <WarningLevel>Level3</WarningLevel>
+      <PreprocessorDefinitions>VK_NO_PROTOTYPES;OS_WINDOWS;RELEASE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>..\Src;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <DebugInformationFormat>None</DebugInformationFormat>
+      <Optimization>Full</Optimization>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <MinimalRebuild>false</MinimalRebuild>
+      <StringPooling>true</StringPooling>
+      <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
+      <LanguageStandard>stdcpplatest</LanguageStandard>
+      <ExternalWarningLevel>TurnOffAllWarnings</ExternalWarningLevel>
+    </ClCompile>
+    <Link>
+      <SubSystem>Windows</SubSystem>
+      <GenerateDebugInformation>false</GenerateDebugInformation>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <OptimizeReferences>true</OptimizeReferences>
+      <AdditionalDependencies>vulkan-1.lib;SDL3.lib;ktx.lib;volk.lib;slang.lib;freetype.lib;fmod_vc.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalLibraryDirectories>..\External\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+    </Link>
+    <PostBuildEvent>
+      <Command>powershell -ExecutionPolicy Bypass -File ../Scripts/CopyAssets.ps1 Release</Command>
+    </PostBuildEvent>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release Linux|x64'">
+    <ClCompile>
+      <PreprocessorDefinitions>VK_NO_PROTOTYPES;OS_LINUX;RELEASE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>..\Src;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <Optimization>Full</Optimization>
+      <DebugInformationFormat>None</DebugInformationFormat>
+      <ExceptionHandling>Enabled</ExceptionHandling>
+      <AdditionalOptions>-Wno-missing-field-initializers %(AdditionalOptions)</AdditionalOptions>
+      <CppLanguageStandard>c++23</CppLanguageStandard>
+    </ClCompile>
+    <Link>
+      <AdditionalDependencies>vulkan.lib;SDL3.lib;..\External\KTX\lib\ktx.lib;volk.lib;..\External\slang\lib\slang.lib;freetype.lib;..\External\fmod\lib\x86_64\fmod.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalLibraryDirectories>..\External\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <ClInclude Include="..\Src\Base.h" />
+    <ClInclude Include="..\Src\Camera.h" />
+    <ClInclude Include="..\Src\Entity.h" />
+    <ClInclude Include="..\Src\Game.h" />
+    <ClInclude Include="..\Src\GameContext.h" />
+    <ClInclude Include="..\Src\InputSystem.h" />
+    <ClInclude Include="..\Src\MarchingLookup.h" />
+    <ClInclude Include="..\Src\Maths.h" />
+    <ClInclude Include="..\Src\Model.h" />
+    <ClInclude Include="..\Src\Planet.h" />
+    <ClInclude Include="..\Src\Player.h" />
+    <ClInclude Include="..\Src\Resources.h" />
+    <ClInclude Include="..\Src\SoundSystem.h" />
+    <ClInclude Include="..\Src\UISystem.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="..\Src\Camera.cpp" />
+    <ClCompile Include="..\Src\Game.cpp" />
+    <ClCompile Include="..\Src\GameContext.cpp" />
+    <ClCompile Include="..\Src\InputSystem.cpp" />
+    <ClCompile Include="..\Src\Maths.cpp" />
+    <ClCompile Include="..\Src\Model.cpp" />
+    <ClCompile Include="..\Src\Planet.cpp" />
+    <ClCompile Include="..\Src\Player.cpp" />
+    <ClCompile Include="..\Src\Resources.cpp" />
+    <ClCompile Include="..\Src\SoundSystem.cpp" />
+    <ClCompile Include="..\Src\UISystem.cpp" />
+    <ClCompile Include="..\Src\main.cpp" />
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <ImportGroup Label="ExtensionTargets">
+  </ImportGroup>
+</Project>

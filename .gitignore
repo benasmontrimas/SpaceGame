@@ -1,8 +1,7 @@
-[Bb]uild/
+Build/obj/*
 *.sln
 *.vs/
 *.sln.DotSettings
-*.vcxproj
 *.vcxproj.filters
 *.vcxproj.user
 *.exe
