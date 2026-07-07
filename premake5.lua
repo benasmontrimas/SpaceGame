@@ -29,14 +29,8 @@ project "SpaceGame"
                 "External/include/fmod/inc/",
         }
 
-        libdirs {
-                "External/lib"
-        }
-
         runpathdirs {
-                -- "External/slang/lib",
-                -- "External/fmod/lib/x86_64/",
-                -- "External/fmod/lib/x64/",
+                "Bin/%{cfg.buildcfg}"
         }
 
         -- Settings --
@@ -46,6 +40,10 @@ project "SpaceGame"
         filter "platforms:Windows"
                 defines { "OS_WINDOWS" }
                 system ("windows")
+
+                libdirs {
+                        "External/lib"
+                }
 
                 links {
                         "vulkan-1",
@@ -67,14 +65,18 @@ project "SpaceGame"
                 system ("linux")
                 disablewarnings { "missing-field-initializers" }
 
+                libdirs {
+                        "External/lib/Linux"
+                }
+
                 links {
                         "vulkan",
                         "SDL3",
-                        "External/KTX/lib/ktx",
+                        "ktx",
                         "volk",
-                        "External/slang/lib/slang",
+                        "slang",
                         "freetype",
-                        "External/fmod/lib/x86_64/fmod"
+                        "fmod"
                 }
 
         filter "configurations:Debug"
