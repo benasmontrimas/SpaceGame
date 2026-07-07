@@ -1,5 +1,4 @@
 Build/obj/*
-*.sln
 *.vs/
 *.sln.DotSettings
 *.vcxproj.filters
