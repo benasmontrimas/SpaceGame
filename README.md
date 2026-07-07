@@ -6,8 +6,9 @@ A space game made in C++ and Vulkan, using Flying Edges/Marching Cubes for proce
 - Build script provided for building with MSBuild
         - Takes a configuration: Release, Development, or Debug
         - Defaults to Release.
-        - From the project folder run "Scripts/Build.ps1" to build the project
+        - Located at "Scripts/Build.ps1"
 - Premake file is provided
+- Visual Studio solution file can also be used to build.
 
 
 ## Known Bugs

@@ -11,11 +11,11 @@ project "SpaceGame"
         cppdialect "C++23"
         symbols "On"
         staticruntime "off"
-        runtime "Release"
 
         -- Output Location --
         location "Build/"
         targetdir "Bin/%{cfg.buildcfg}"
+        debugdir "Bin/%{cfg.buildcfg}"
 
         -- Input Locations --
         files { "Src/**.h", "Src/**.cpp" }
@@ -59,6 +59,8 @@ project "SpaceGame"
 
                 -- filter "configurations:Release"
                 kind "WindowedApp"
+                postbuildcommands { "powershell -ExecutionPolicy Bypass -File ../Scripts/CopyAssets.ps1 %{cfg.buildcfg}" }
+                -- postbuildcommands { "powershell -command Get-Location" }
 
         filter "platforms:Linux"
                 defines { "OS_LINUX" }
@@ -76,15 +78,19 @@ project "SpaceGame"
                 }
 
         filter "configurations:Debug"
+                kind "ConsoleApp"
+                runtime "Debug"
                 defines { "DEBUG", "_DEBUG", "DEBUG_TRACE", "DEBUG_INFO", "DEBUG_WARNINGS"}
                 symbols "On"
 
         filter "configurations:Development"
+                runtime "Release"
                 defines { "DEBUG", "DEBUG_TRACE", "DEBUG_INFO", "DEBUG_WARNINGS"}
                 symbols "On"
                 optimize "Debug"
 
         filter "configurations:Release"
+                runtime "Release"
                 symbols "Off"
                 defines { "RELEASE" }
                 optimize "On"
