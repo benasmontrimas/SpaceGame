@@ -9,7 +9,8 @@ $project_directory_path = Resolve-Path (Join-Path $PSScriptRoot "..")
 $bin_directory_path = Join-Path $project_directory_path "Bin"
 $executable_directory_path = Join-Path $bin_directory_path $configuration
 $assets_directory_path = Join-Path $project_directory_path "Assets"
-$libs_directory_path = Join-Path $project_directory_path "External" "lib"
+$external_directory_path = Join-Path $project_directory_path "External"
+$libs_directory_path = Join-Path $external_directory_path "lib"
 
 Set-Location $project_directory_path
 
